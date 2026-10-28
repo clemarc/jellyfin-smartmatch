@@ -202,6 +202,31 @@ public class PipelineTests
     }
 
     [Fact]
+    public async Task Provider_backoff_does_not_keep_a_run_open_and_retries_later()
+    {
+        var (h, tv, _) = Setup();
+        using var _h = h;
+        var item = h.Library.Add(tv, MediaKind.Series, Reggie);
+        h.Providers.Fail = () => Harness.Http(HttpStatusCode.ServiceUnavailable);
+        var run = h.Audits.StartAudit(RunKinds.Audit, "admin", false);
+        await h.Drain();
+        Assert.Equal(RunStatus.Completed, h.Store.GetAuditRun(run.RunId)!.Status);
+        Assert.Equal(1, h.Store.QueueCount());
+        Assert.Equal(FindingStatus.ProviderError, h.FindingFor(item.Id).Status);
+
+        // A second audit during the back-off window also completes instead of waiting for the retry.
+        var second = h.Audits.StartAudit(RunKinds.Audit, "admin", false);
+        await h.Worker.DrainAsync(CancellationToken.None);
+        Assert.Equal(RunStatus.Completed, h.Store.GetAuditRun(second.RunId)!.Status);
+
+        h.Providers.Fail = null;
+        h.Time.Advance(TimeSpan.FromMinutes(20));
+        await h.Drain();
+        Assert.Equal(FindingStatus.Proposed, h.FindingFor(item.Id).Status);
+        Assert.Equal(0, h.Store.QueueCount());
+    }
+
+    [Fact]
     public async Task No_enabled_providers_is_reported_distinctly()
     {
         var (h, tv, _) = Setup();

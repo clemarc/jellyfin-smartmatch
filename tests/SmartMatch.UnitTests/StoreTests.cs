@@ -125,6 +125,10 @@ public class StoreTests : IDisposable
         var ready = store.PeekReady(now.AddSeconds(61), 10).Single();
         Assert.Equal(FindingOrigin.NewScan, ready.Origin);
         Assert.NotNull(ready.RunId);
+
+        // A later reconciliation does not relabel a new-scan item.
+        store.Enqueue(id, FindingOrigin.Reconciliation, Guid.NewGuid(), now, false);
+        Assert.Equal(FindingOrigin.NewScan, store.PeekReady(now.AddSeconds(61), 10).Single().Origin);
     }
 
     [Fact]

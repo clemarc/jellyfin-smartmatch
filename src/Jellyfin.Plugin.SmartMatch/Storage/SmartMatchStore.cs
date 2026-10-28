@@ -509,13 +509,20 @@ public sealed class SmartMatchStore
 
                 existing.Force |= force;
 
-                // A scan event outranks an audit attribution: the item is new, not merely existing.
-                if (origin == FindingOrigin.NewScan || existing.RunId is null)
+                // A scan event outranks other attributions (the item is new, not merely existing);
+                // otherwise the first reason for queuing the item is kept.
+                if (origin == FindingOrigin.NewScan || origin == FindingOrigin.Manual)
                 {
                     existing.Origin = origin;
                 }
 
-                existing.RunId ??= runId;
+                // Only attribute to a run work that will happen when the run asked for it; an entry
+                // waiting for a provider back-off must not hold the run open.
+                if (existing.RunId is null && existing.NotBeforeUtc <= notBeforeUtc)
+                {
+                    existing.RunId = runId;
+                }
+
                 _dirty.Add(QueueFile);
                 return true;
             }
@@ -596,6 +603,38 @@ public sealed class SmartMatchStore
                 e.Deferrals++;
                 _dirty.Add(QueueFile);
             }
+        }
+    }
+
+    /// <summary>
+    /// Detaches a queue entry from its run and schedules it for later (provider back-off), so the
+    /// run can complete while the retry stays queued.
+    /// </summary>
+    /// <param name="itemId">Item id.</param>
+    /// <param name="notBeforeUtc">Retry time.</param>
+    public void DetachAndDefer(Guid itemId, DateTime notBeforeUtc)
+    {
+        lock (_sync)
+        {
+            if (_queue.TryGetValue(itemId, out var e))
+            {
+                e.RunId = null;
+                e.Force = false;
+                e.NotBeforeUtc = notBeforeUtc;
+                _dirty.Add(QueueFile);
+            }
+        }
+    }
+
+    /// <summary>Counts entries due now and entries deferred to later.</summary>
+    /// <param name="nowUtc">Now.</param>
+    /// <returns>Due and deferred counts.</returns>
+    public (int Due, int Deferred) QueueDueCounts(DateTime nowUtc)
+    {
+        lock (_sync)
+        {
+            var due = _queue.Values.Count(q => q.NotBeforeUtc <= nowUtc);
+            return (due, _queue.Count - due);
         }
     }
 

@@ -296,6 +296,14 @@ public sealed class SmartMatchWorker : BackgroundService
         }
 
         _status.Processed++;
+        if (outcome.DeferUntilUtc is { } retryAt && (outcome.Searched || outcome.Code == "Deferred:PROVIDER_BACKOFF"))
+        {
+            // Provider back-off: the attempt counts for the run; the retry continues on its own.
+            _audits.RecordOutcome(entry.RunId, outcome with { DeferUntilUtc = null });
+            _store.DetachAndDefer(entry.ItemId, retryAt);
+            return;
+        }
+
         if (outcome.DeferUntilUtc is { } until)
         {
             if (entry.Deferrals > 200)

@@ -61,3 +61,5 @@ dist/
 .integration/
 __pycache__/
 *.pyc
+dist-update/
+node_modules/

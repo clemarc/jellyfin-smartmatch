@@ -103,6 +103,7 @@ public class SmartMatchController : ControllerBase
         var runs = _store.GetAuditRuns();
         var (checkedCount, newest) = _store.CoverageStats(inScope);
         var total = SafeCount(inScope);
+        var (due, deferred) = _store.QueueDueCounts(DateTime.UtcNow);
         var dto = new StatusDto
         {
             PluginVersion = typeof(Plugin).Assembly.GetName().Version?.ToString() ?? "unknown",
@@ -113,6 +114,8 @@ public class SmartMatchController : ControllerBase
             WorkerState = _status.State,
             Fault = _status.Fault,
             QueueLength = _store.QueueCount(),
+            QueueDue = due,
+            QueueDeferred = deferred,
             QueueByOrigin = _store.QueueCountByOrigin().ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
             Counts = Enum.GetValues<FindingStatus>().ToDictionary(s => s.ToString(), s => counts.GetValueOrDefault(s)),
             Eligible = _store.QueryFindings(f => f.Status == FindingStatus.Proposed && f.Recommended() is { Applicable: true } && inScope.Contains(f.LibraryId)).Count,

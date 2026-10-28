@@ -46,6 +46,12 @@ public sealed class StatusDto
     /// <summary>Gets or sets the queue length.</summary>
     public int QueueLength { get; set; }
 
+    /// <summary>Gets or sets the number of queued items due now.</summary>
+    public int QueueDue { get; set; }
+
+    /// <summary>Gets or sets the number of queued items waiting for a later retry or settle window.</summary>
+    public int QueueDeferred { get; set; }
+
     /// <summary>Gets or sets queue length by origin.</summary>
     public Dictionary<string, int> QueueByOrigin { get; set; } = new();
 
