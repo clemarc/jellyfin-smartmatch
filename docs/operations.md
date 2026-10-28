@@ -85,7 +85,7 @@ Switching back to **Report only** (or unticking the library) takes effect before
 
 Normal logs identify items by Jellyfin id, never by path. Only the cleaned title, year, library language and country are sent to metadata providers, through Jellyfin. Nothing is sent to the plugin author.
 
-Items that clean to the same title and year, with the same providers and language, share one search for a day; the log line for the second and later items says the results were reused. **Retry analysis** always searches again.
+Items that clean to the same title and year, with the same providers and language, share one search for a day; the log line for the second and later items says the results were reused. **Retry analysis** and a forced audit always search again.
 
 ## Data
 

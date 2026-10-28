@@ -8,7 +8,8 @@ namespace Jellyfin.Plugin.SmartMatch.Matching;
 /// In-memory cache of complete provider searches, keyed by the query fingerprint (search title,
 /// year, rules, providers, language, country and media kind). Many items often clean to the same
 /// title, e.g. one release folder per episode of a series; within a day they share one search.
-/// Searches with any provider failure are never cached. The cache is empty after a restart.
+/// Searches with any provider failure are never cached, forced requests (Retry analysis, forced
+/// audit) bypass it, and it is empty after a restart.
 /// </summary>
 public sealed class ProviderResultCache
 {

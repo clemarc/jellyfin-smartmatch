@@ -378,14 +378,15 @@ public class PipelineTests
         Assert.Equal(FindingStatus.Proposed, second.Finding!.Status);
         Assert.Equal(2, h.Providers.Queries.Count);
 
-        // A manual Retry analysis always asks the providers again.
+        // Retry analysis and a forced audit always ask the providers again.
         Assert.True((await h.Analyze(e9.Id, FindingOrigin.Manual, force: true)).Searched);
-        Assert.Equal(4, h.Providers.Queries.Count);
+        Assert.True((await h.Analyze(e9.Id, FindingOrigin.ExistingAudit, force: true)).Searched);
+        Assert.Equal(6, h.Providers.Queries.Count);
 
         // After a day the cached search has expired.
         h.Time.Advance(ProviderResultCache.Lifetime);
         Assert.True((await h.Analyze(e10.Id)).Searched);
-        Assert.Equal(6, h.Providers.Queries.Count);
+        Assert.Equal(8, h.Providers.Queries.Count);
     }
 
     [Fact]

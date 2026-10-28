@@ -217,11 +217,11 @@ public sealed class ItemAnalyzer
             return Save(item, finding, itemFingerprint, queryFingerprint, "ProviderError", now, false);
         }
 
-        // Items that clean to the same query within a day share one search; Retry analysis
-        // (a manual request) always asks the providers again.
+        // Items that clean to the same query within a day share one search; a forced request
+        // (Retry analysis, forced audit) always asks the providers again.
         ProviderSearchOutcome outcome;
         var searched = true;
-        if (entry.Origin != FindingOrigin.Manual && _cache.TryGet(queryFingerprint, out var cached))
+        if (!entry.Force && _cache.TryGet(queryFingerprint, out var cached))
         {
             outcome = new ProviderSearchOutcome(cached, Array.Empty<ProviderFailure>(), context.Providers.Count);
             searched = false;
@@ -321,7 +321,15 @@ public sealed class ItemAnalyzer
                 count++;
                 if (!MatchCandidateRanker.HasFullEvidence(f.Candidates) && HasSameTitleAndYear(f.Candidates))
                 {
-                    _store.Enqueue(f.ItemId, f.Origin, null, _time.GetUtcNow().UtcDateTime, true);
+                    // Clearing the saved query fingerprint makes the next analysis search, without
+                    // forcing it, so several such items with one title still share a cached search.
+                    if (_store.GetCoverage(f.ItemId) is { } coverage)
+                    {
+                        coverage.QueryFingerprint = string.Empty;
+                        _store.SetCoverage(f.ItemId, coverage);
+                    }
+
+                    _store.Enqueue(f.ItemId, f.Origin, null, _time.GetUtcNow().UtcDateTime, false);
                 }
             }
         }
