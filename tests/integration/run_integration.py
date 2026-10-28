@@ -253,6 +253,7 @@ class Runner:
         self.jf = Jellyfin(f"http://127.0.0.1:{self.port}")
         self.viewer_token = None
         self.libraries: dict[str, str] = {}
+        self.added: set[str] = set()
 
     # ------------------------------------------------------------------ container
 
@@ -376,7 +377,10 @@ class Runner:
                 self.smoke()
             else:
                 self.full(media_before)
-            r.check("AT-14", "media files and folders byte-identical after all operations", sha_tree(self.media) == media_before)
+            after = sha_tree(self.media)
+            unchanged = all(after.get(k) == v for k, v in media_before.items())
+            extra = set(after) - set(media_before) - self.added
+            r.check("AT-14", "pre-existing media byte-identical, no files created besides the test's own new downloads", unchanged and not extra, str(sorted(extra)))
             if self.args.update_zip:
                 self.update(Path(self.args.update_zip))
         except Exception as e:  # noqa: BLE001 - report every failure with logs
@@ -501,8 +505,9 @@ class Runner:
         r.check("AT-20d", "commit is idempotent", replay["RunId"] == run["RunId"])
         done = wait_until(lambda: (b := self.sm("GET", f"ApplyBatch/{run['RunId']}"))["Status"] != "Running" and b, 300, what="batch")
         outcomes = {i["Title"]: i["Outcome"] for i in done["Items"]}
-        r.check("AT-20e", "only eligible records changed; per-item outcomes reported", outcomes.get("Arrival.2016.1080p") in ("Conflict",) and sum(o == "Applied" for o in outcomes.values()) == 2, json.dumps(outcomes))
-        r.check("AT-07", "conflicting id appearing after preview aborts with conflict", outcomes.get("Arrival.2016.1080p") == "Conflict" and self.item(arrival_item["Id"])["ProviderIds"] == {"Imdb": "tt2543164"})
+        arrival_outcome = next((o for t, o in outcomes.items() if "Arrival" in t), None)
+        r.check("AT-20e", "only eligible records changed; per-item outcomes reported", arrival_outcome == "Conflict" and sum(o == "Applied" for o in outcomes.values()) == 2, json.dumps(outcomes))
+        r.check("AT-07", "conflicting id appearing after preview aborts with conflict", arrival_outcome == "Conflict" and self.item(arrival_item["Id"])["ProviderIds"] == {"Imdb": "tt2543164"})
         items = self.items_by_path()
         dk_item = items["/media/movies/The.Dark.Knight.2008.1080p.BluRay.x264/The.Dark.Knight.2008.1080p.BluRay.x264.mkv"]
         r.check("AT-04", "applied provider id persisted, metadata refreshed, path unchanged", dk_item["ProviderIds"].get("Tmdb") == "990101" and (dk_item.get("Overview") or "").startswith("Synthetic overview") and dk_item["Name"] == "The Dark Knight", json.dumps({k: dk_item.get(k) for k in ("Name", "Overview", "ProviderIds")}))
@@ -529,7 +534,7 @@ class Runner:
         reggie = self.finding("Reggie Dinkins")
         rb = self.sm("POST", f"Reviews/{reggie['ReviewId']}/Rollback", {"Version": reggie["Version"]})
         reggie_item = self.items_by_path()["/media/tv/www.UIndex.org - The Fall and Rise of Reggie Dinkins"]
-        r.check("M2-rollback", "conditional rollback restores provider ids and title", rb["Outcome"] == "RolledBack" and not reggie_item["ProviderIds"].get("Tmdb") and reggie_item["Name"].startswith("www.UIndex.org"), json.dumps(rb))
+        r.check("M2-rollback", "conditional rollback restores provider ids and title", rb["Outcome"] == "RolledBack" and not reggie_item["ProviderIds"].get("Tmdb") and reggie_item["Name"] == reggie["OriginalName"], json.dumps({"outcome": rb["Outcome"], "name": reggie_item["Name"]}))
 
         # Self-generated events do not loop.
         time.sleep(8)
@@ -586,12 +591,19 @@ class Runner:
         proc = subprocess.run(["node", str(ROOT / "tests/integration/ui_check.js"), self.jf.base, "admin", "admin-pass-1", str(shots)],
                               capture_output=True, text=True, timeout=600)
         out = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else proc.stderr[-500:]
-        self.report.check("UI", "dashboard page renders status, tiles, findings, detail, preview and settings in the Jellyfin 12 web client", proc.returncode == 0, out[:600])
+        (self.work / "ui-check.json").write_text(out)
+        try:
+            parsed = json.loads(out)
+            out = json.dumps({"errors": parsed.get("errors"), "checks": {k: v for k, v in parsed.get("checks", {}).items() if k != "firstRow"}})
+        except json.JSONDecodeError:
+            pass
+        self.report.check("UI", "dashboard page renders status, tiles, findings, detail, preview and settings in the Jellyfin 12 web client", proc.returncode == 0, out[:1500])
 
     def add_series(self, folder: str, episode: str) -> None:
         # The container sees /media read-only; the host side creates the "new download".
         p = self.media / "tv" / folder / "Season 1" / episode
         p.parent.mkdir(parents=True, exist_ok=True)
+        self.added.add(str(p.relative_to(self.media)))
         p.write_bytes(b"synthetic-not-a-video-" + folder.encode())
 
     def smoke(self) -> None:

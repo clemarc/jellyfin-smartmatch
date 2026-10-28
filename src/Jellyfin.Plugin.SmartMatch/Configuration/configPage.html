@@ -108,8 +108,8 @@
                             <label><input type="radio" name="smScope" value="all"> entire report</label>
                         </span>
                         <button is="emby-button" type="button" class="raised emby-button" id="smApplyAll"><span>Apply all eligible…</span></button>
-                        <button is="emby-button" type="button" class="emby-button" id="smExportCsv"><span>Export CSV</span></button>
-                        <button is="emby-button" type="button" class="emby-button" id="smExportJson"><span>Export JSON</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smExportCsv"><span>Export CSV</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smExportJson"><span>Export JSON</span></button>
                     </div>
                     <div id="smBatchProgress" class="sm-panel sm-hidden" aria-live="polite"></div>
                     <div id="smEmpty" class="sm-panel sm-hidden"></div>
@@ -133,9 +133,9 @@
                         </table>
                     </div>
                     <div class="sm-pager">
-                        <button is="emby-button" type="button" class="emby-button" id="smPrev"><span>Previous</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smPrev"><span>Previous</span></button>
                         <span id="smPageInfo"></span>
-                        <button is="emby-button" type="button" class="emby-button" id="smNext"><span>Next</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smNext"><span>Next</span></button>
                     </div>
                     <div id="smDetail" class="sm-panel sm-hidden" tabindex="-1"></div>
                 </section>
@@ -144,9 +144,9 @@
                     <h3>Change history</h3>
                     <div class="sm-table-wrap"><table class="sm-table" id="smDecisions"><thead><tr><th>Time</th><th>Action</th><th>Origin</th><th>Item</th><th>Outcome</th><th>Details</th></tr></thead><tbody></tbody></table></div>
                     <div class="sm-pager">
-                        <button is="emby-button" type="button" class="emby-button" id="smDecPrev"><span>Previous</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smDecPrev"><span>Previous</span></button>
                         <span id="smDecInfo"></span>
-                        <button is="emby-button" type="button" class="emby-button" id="smDecNext"><span>Next</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smDecNext"><span>Next</span></button>
                     </div>
                     <h3>Bulk runs</h3>
                     <div class="sm-table-wrap"><table class="sm-table" id="smBatches"><thead><tr><th>Started</th><th>Scope</th><th>Status</th><th>Outcomes</th></tr></thead><tbody></tbody></table></div>
@@ -207,14 +207,14 @@
                         <p class="sm-small sm-muted">Built-in rules remove known release-site watermarks such as <code>www.UIndex.org -</code>. Custom rules are regular expressions anchored at the start of the name. A rule can only be enabled when its example input produces its expected output.</p>
                         <div id="smBuiltInRules" class="sm-small"></div>
                         <div class="sm-table-wrap"><table class="sm-table sm-rules" id="smRules"><thead><tr><th>Id</th><th>Pattern</th><th>Example input</th><th>Expected output</th><th>Enabled</th><th></th></tr></thead><tbody></tbody></table></div>
-                        <button is="emby-button" type="button" class="emby-button" id="smAddRule"><span>Add rule</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smAddRule"><span>Add rule</span></button>
 
                         <h3>Name preview</h3>
                         <div class="sm-row">
                             <input id="smPreviewName" class="sm-input" style="flex: 1; min-width: 16em" maxlength="512" placeholder="www.UIndex.org - The.Show.S01E01.1080p.mkv" aria-label="Name to preview">
                             <select id="smPreviewType" class="sm-input" aria-label="Media type"><option value="Series">Series</option><option value="Movie">Movie</option></select>
                             <label><input type="checkbox" id="smPreviewFile"> filename</label>
-                            <button is="emby-button" type="button" class="emby-button" id="smPreviewBtn"><span>Preview</span></button>
+                            <button is="emby-button" type="button" class="raised emby-button" id="smPreviewBtn"><span>Preview</span></button>
                         </div>
                         <div id="smPreviewOut" class="sm-trace"></div>
 

@@ -142,6 +142,12 @@ public sealed class ItemAnalyzer
             return new AnalysisOutcome("Skipped:" + eligibility.Code, existing, null, false);
         }
 
+        if (config.DebugLogPaths)
+        {
+            // Opt-in only: normal logs identify items by id, never by path.
+            _logger.LogDebug("Smart Match analysing item {ItemId} at {Path}", item.Id, item.Path);
+        }
+
         var rules = ConfigurationValidator.BuildRuleSet(config);
         var (normalization, sourceName) = NameEvidence.Build(item, _normalizer, rules, () => _library.GetFallbackEpisodeFileName(item.Id));
 

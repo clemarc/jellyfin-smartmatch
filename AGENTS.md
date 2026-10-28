@@ -27,7 +27,7 @@ scripts/                         package.py, update-manifest.py, verify-release.
 ```bash
 dotnet restore --locked-mode          # lock files are committed
 dotnet build -c Release               # warnings are errors
-dotnet test -c Release                # 246 unit tests, ~3 s
+dotnet test -c Release                # 247 unit tests, ~10 s
 dotnet format --verify-no-changes --severity warn
 
 python3 scripts/package.py            # dist/smartmatch_<version>-jf12.zip (+ SHA256SUMS.txt, .md5)

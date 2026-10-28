@@ -45,7 +45,8 @@ function el(tag, attrs, children) {
 }
 
 function button(label, onclick, opts) {
-    const b = el('button', Object.assign({ type: 'button', is: 'emby-button', className: 'emby-button' + ((opts && opts.raised) ? ' raised' : ''), onclick: onclick }, (opts && opts.attrs) || {}), [el('span', { text: label })]);
+    // Every button is "raised": Jellyfin's flat style is unreadable on some themes. Primary actions also get button-submit.
+    const b = el('button', Object.assign({ type: 'button', is: 'emby-button', className: 'emby-button raised' + ((opts && opts.raised) ? ' button-submit' : ''), onclick: onclick }, (opts && opts.attrs) || {}), [el('span', { text: label })]);
     return b;
 }
 
@@ -155,7 +156,7 @@ export default function (view) {
 
         const counts = s.Counts || {};
         const tiles = [
-            ['Not checked', (counts.Queued || 0) + (s.QueueLength || 0), 'Queued'],
+            ['Not checked', (counts.Queued || 0) + (s.QueueDue || 0), 'Queued'],
             ['Proposed', counts.Proposed || 0, 'Proposed'],
             ['Need review', counts.NeedsReview || 0, 'NeedsReview'],
             ['Applied', counts.Applied || 0, 'Applied'],
