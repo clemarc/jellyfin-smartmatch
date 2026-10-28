@@ -1,0 +1,182 @@
+name: Release
+
+# Publishing is owner-initiated: pushing a vX.Y.Z.W tag (or re-running for an existing tag via
+# workflow_dispatch) is the authorization. Nothing here deploys to a Jellyfin server.
+on:
+  push:
+    tags: ["v*.*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)publish, e.g. v1.0.0.0. Re-running never changes published bytes."
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  JELLYFIN_12_0: jellyfin/jellyfin:12.0.20260908-012347
+
+jobs:
+  build:
+    name: Validate tag, build, test, package
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+      zip: ${{ steps.v.outputs.zip }}
+    steps:
+      - name: Resolve tag
+        id: v
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "::error::Tag $TAG is not vX.Y.Z.W"; exit 1; fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "zip=smartmatch_${VERSION}-jf12.zip" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.v.outputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Tag must match build version and ABI
+        run: |
+          VERSION="${{ steps.v.outputs.version }}"
+          grep -q "^version: \"$VERSION\"" build.yaml || { echo "::error::build.yaml version != $VERSION"; exit 1; }
+          grep -q "<Version>$VERSION</Version>" Directory.Build.props || { echo "::error::Directory.Build.props Version != $VERSION"; exit 1; }
+          grep -q '^targetAbi: "12.0.0.0"' build.yaml || { echo "::error::unexpected targetAbi"; exit 1; }
+          grep -q '<JellyfinPackageVersion>12.0.0</JellyfinPackageVersion>' Directory.Build.props || { echo "::error::Jellyfin package pin changed without updating targetAbi"; exit 1; }
+      - run: dotnet restore --locked-mode
+      - run: dotnet build -c Release --no-restore
+      - run: dotnet test -c Release --no-build
+      - name: Package (reproducible)
+        run: SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" python3 scripts/package.py --version "${{ steps.v.outputs.version }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: |
+            dist/*.zip
+            dist/*.md5
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+  integration:
+    name: Release gate on disposable Jellyfin 12.0
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.tag }}
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: dist
+      - run: dotnet build tests/SmartMatch.TestProvider -c Release
+      - run: |
+          python3 tests/integration/run_integration.py --image "$JELLYFIN_12_0" --catalog \
+            --zip "dist/${{ needs.build.outputs.zip }}" \
+            --provider-dll tests/SmartMatch.TestProvider/bin/Release/net10.0/SmartMatch.TestProvider.dll \
+            --workdir "$RUNNER_TEMP/it" --report integration-report.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: release-integration
+          path: |
+            integration-report.json
+            ${{ runner.temp }}/it/*.log
+
+  publish:
+    name: GitHub Release and catalogue
+    needs: [build, integration]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.build.outputs.tag }}
+      VERSION: ${{ needs.build.outputs.version }}
+      ZIP: ${{ needs.build.outputs.zip }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.tag }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: dist
+      - name: Create GitHub Release (immutable assets)
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists; verifying published bytes instead of replacing them."
+            gh release download "$TAG" --pattern "$ZIP" --dir /tmp/existing
+            if ! cmp -s "/tmp/existing/$ZIP" "dist/$ZIP"; then
+              echo "::error::Published $ZIP differs from this build. Published versions are immutable; bump the version."
+              exit 1
+            fi
+          else
+            cat > /tmp/notes.md <<EOF
+          Smart Match $VERSION for Jellyfin 12 (target ABI 12.0.0.0, .NET 10, AnyCPU: Linux x64 and ARM64).
+
+          Install: Dashboard → Plugins → Repositories → add
+          \`https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/catalog/manifest.json\`, then install **Smart Match** from the catalogue and restart Jellyfin.
+
+          SHA-256: \`$(cut -d' ' -f1 dist/SHA256SUMS.txt)\` · MD5 (manifest checksum): \`$(cat dist/$ZIP.md5)\`
+          EOF
+            gh release create "$TAG" "dist/$ZIP" dist/SHA256SUMS.txt --title "Smart Match $VERSION" --notes-file /tmp/notes.md --verify-tag
+          fi
+      - name: Wait until the release asset is publicly downloadable and identical
+        run: |
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ZIP}"
+          for i in $(seq 1 30); do
+            if curl -fsSL -o /tmp/hosted.zip "$URL"; then break; fi
+            sleep 10
+          done
+          cmp "/tmp/hosted.zip" "dist/$ZIP"
+      - name: Update catalog branch
+        run: |
+          git config user.name "smartmatch-release[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin catalog >/dev/null; then
+            git fetch origin catalog
+            git worktree add catalog-wt origin/catalog
+            git -C catalog-wt switch -C catalog
+          else
+            git worktree add --detach catalog-wt
+            git -C catalog-wt switch --orphan catalog
+          fi
+          python3 scripts/update-manifest.py --manifest catalog-wt/manifest.json --zip "dist/$ZIP" \
+            --url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ZIP}" \
+            --version "$VERSION" --timestamp "$(git log -1 --format=%cI "$TAG")"
+          cd catalog-wt
+          git add manifest.json
+          if git diff --cached --quiet; then
+            echo "Catalogue already contains $VERSION."
+          else
+            git commit -m "Publish Smart Match $VERSION to the plugin catalogue"
+            git push origin catalog
+          fi
+      - name: Verify the public catalogue as a client would
+        run: |
+          MANIFEST="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/catalog/manifest.json"
+          for i in $(seq 1 40); do
+            if python3 scripts/verify-release.py --manifest "$MANIFEST" --version "$VERSION" --local-zip "dist/$ZIP"; then exit 0; fi
+            echo "catalogue not visible yet (raw CDN cache); retrying"
+            sleep 15
+          done
+          echo "::error::Catalogue publication could not be verified. Re-run this workflow with workflow_dispatch tag=$TAG to republish the same release."
+          exit 1

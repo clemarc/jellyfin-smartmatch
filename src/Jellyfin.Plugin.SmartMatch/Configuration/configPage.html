@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Smart Match</title>
+</head>
+<body>
+    <div id="SmartMatchPage" data-role="page" class="page type-interior pluginConfigurationPage smartMatchPage" data-controller="__plugin/SmartMatchJs">
+        <style>
+            .smartMatchPage .sm-wrap { max-width: 1400px; }
+            .smartMatchPage .sm-muted { opacity: .75; }
+            .smartMatchPage .sm-row { display: flex; flex-wrap: wrap; gap: .75em; align-items: center; }
+            .smartMatchPage .sm-badge { display: inline-block; padding: .15em .6em; border-radius: 1em; font-size: .85em; border: 1px solid currentColor; }
+            .smartMatchPage .sm-ok { color: #4caf50; }
+            .smartMatchPage .sm-warn { color: #ffb74d; }
+            .smartMatchPage .sm-bad { color: #ef5350; }
+            .smartMatchPage .sm-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(9em, 1fr)); gap: .75em; margin: 1em 0; }
+            .smartMatchPage .sm-tile { padding: .8em; border-radius: .4em; background: rgba(127,127,127,.12); text-align: center; cursor: pointer; border: 0; color: inherit; font: inherit; }
+            .smartMatchPage .sm-tile:focus-visible, .smartMatchPage button:focus-visible, .smartMatchPage tr:focus-visible { outline: 2px solid #00a4dc; outline-offset: 2px; }
+            .smartMatchPage .sm-tile .sm-num { font-size: 1.8em; font-weight: 600; display: block; }
+            .smartMatchPage .sm-status { display: grid; grid-template-columns: repeat(auto-fit, minmax(15em, 1fr)); gap: .5em 1.5em; margin: .5em 0 1em; }
+            .smartMatchPage .sm-tabs { display: flex; gap: .25em; flex-wrap: wrap; border-bottom: 1px solid rgba(127,127,127,.3); margin: 1em 0; }
+            .smartMatchPage .sm-tab { background: none; border: 0; color: inherit; padding: .7em 1em; cursor: pointer; font: inherit; border-bottom: 3px solid transparent; }
+            .smartMatchPage .sm-tab[aria-selected="true"] { border-bottom-color: #00a4dc; font-weight: 600; }
+            .smartMatchPage .sm-table-wrap { overflow-x: auto; }
+            .smartMatchPage table.sm-table { width: 100%; border-collapse: collapse; font-size: .92em; }
+            .smartMatchPage .sm-table th, .smartMatchPage .sm-table td { text-align: left; padding: .45em .5em; border-bottom: 1px solid rgba(127,127,127,.2); vertical-align: top; }
+            .smartMatchPage .sm-table tbody tr { cursor: pointer; }
+            .smartMatchPage .sm-table tbody tr:hover { background: rgba(127,127,127,.1); }
+            .smartMatchPage .sm-table tr.sm-selected-row { background: rgba(0,164,220,.15); }
+            .smartMatchPage .sm-panel { padding: 1em; border-radius: .4em; background: rgba(127,127,127,.1); margin: 1em 0; }
+            .smartMatchPage .sm-warnings { border-left: 4px solid #ffb74d; padding: .5em 1em; margin: 1em 0; background: rgba(255,183,77,.08); }
+            .smartMatchPage .sm-error { border-left: 4px solid #ef5350; padding: .5em 1em; margin: 1em 0; background: rgba(239,83,80,.08); }
+            .smartMatchPage .sm-trace { font-family: monospace; font-size: .9em; white-space: pre-wrap; word-break: break-word; }
+            .smartMatchPage .sm-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(18em, 1fr)); gap: 1em; }
+            .smartMatchPage .sm-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(11em, 1fr)); gap: .5em; margin-bottom: .5em; }
+            .smartMatchPage .sm-filters select, .smartMatchPage .sm-filters input { width: 100%; }
+            .smartMatchPage input.sm-input, .smartMatchPage select.sm-input, .smartMatchPage textarea.sm-input { background: rgba(127,127,127,.15); color: inherit; border: 1px solid rgba(127,127,127,.4); border-radius: .3em; padding: .45em; font: inherit; box-sizing: border-box; }
+            .smartMatchPage .sm-dialog { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1em; }
+            .smartMatchPage .sm-dialog-body { background: #202020; color: #eee; max-width: 900px; width: 100%; max-height: 90vh; overflow: auto; padding: 1.5em; border-radius: .5em; }
+            .smartMatchPage .sm-pager { display: flex; gap: .5em; align-items: center; margin: .75em 0; flex-wrap: wrap; }
+            .smartMatchPage .sm-rules td input { width: 100%; }
+            .smartMatchPage .sm-hidden { display: none !important; }
+            .smartMatchPage .sm-candidate { padding: .5em; border-bottom: 1px solid rgba(127,127,127,.2); }
+            .smartMatchPage .sm-small { font-size: .85em; }
+            .smartMatchPage .sm-scope label { margin-right: 1em; }
+            @media (max-width: 700px) { .smartMatchPage .sm-hide-mobile { display: none; } }
+        </style>
+        <div data-role="content">
+            <div class="content-primary sm-wrap">
+                <div class="sm-row">
+                    <h2 style="margin: 0">Smart Match</h2>
+                    <span id="smVersion" class="sm-badge sm-muted">…</span>
+                    <span id="smCompat" class="sm-badge">…</span>
+                    <span id="smMode" class="sm-badge">…</span>
+                </div>
+                <p class="sm-muted">Matches films and series with messy filenames. Never renames or moves files.</p>
+
+                <div id="smFault" class="sm-error sm-hidden" role="alert"></div>
+                <div id="smWarnings" class="sm-warnings sm-hidden" role="status"></div>
+
+                <div class="sm-status" id="smStatus" aria-live="polite"></div>
+
+                <div class="sm-tiles" id="smTiles"></div>
+
+                <div class="sm-row">
+                    <button is="emby-button" type="button" class="raised button-submit emby-button" id="smViewFindings"><span>View findings</span></button>
+                    <button is="emby-button" type="button" class="raised emby-button" id="smAudit"><span>Audit existing library</span></button>
+                    <button is="emby-button" type="button" class="raised emby-button" id="smReconcile"><span>Reconcile now</span></button>
+                    <button is="emby-button" type="button" class="raised emby-button sm-hidden" id="smCancelAudit"><span>Cancel run</span></button>
+                    <button is="emby-button" type="button" class="raised emby-button" id="smOpenSettings"><span>Settings</span></button>
+                </div>
+
+                <div class="sm-tabs" role="tablist" aria-label="Smart Match sections">
+                    <button type="button" class="sm-tab" role="tab" data-tab="findings" aria-selected="true" aria-controls="smTabFindings">Findings</button>
+                    <button type="button" class="sm-tab" role="tab" data-tab="history" aria-selected="false" aria-controls="smTabHistory">History</button>
+                    <button type="button" class="sm-tab" role="tab" data-tab="settings" aria-selected="false" aria-controls="smTabSettings">Settings</button>
+                    <button type="button" class="sm-tab" role="tab" data-tab="safety" aria-selected="false" aria-controls="smTabSafety">Safe operation</button>
+                </div>
+
+                <section id="smTabFindings" role="tabpanel" aria-label="Findings">
+                    <div class="sm-filters">
+                        <label>Status<select id="smFStatus" class="sm-input">
+                            <option value="">All</option>
+                            <option value="NeedsReview">Needs review</option>
+                            <option value="Proposed">Proposed</option>
+                            <option value="Applied">Applied</option>
+                            <option value="Partial">Partially applied</option>
+                            <option value="Conflict">Conflict</option>
+                            <option value="ProviderError">Provider error</option>
+                            <option value="NoMatch">No match</option>
+                            <option value="Queued">Not checked</option>
+                            <option value="Ignored">Ignored</option>
+                            <option value="Rejected">Rejected</option>
+                            <option value="RolledBack">Rolled back</option>
+                            <option value="Resolved">Resolved</option>
+                        </select></label>
+                        <label>Library<select id="smFLibrary" class="sm-input"><option value="">All</option></select></label>
+                        <label>Type<select id="smFType" class="sm-input"><option value="">All</option><option value="Series">Series</option><option value="Movie">Movie</option></select></label>
+                        <label>Confidence<select id="smFConfidence" class="sm-input"><option value="">All</option><option value="auto">Auto-eligible</option><option value="high">High (≥ 90)</option><option value="medium">Medium (70-89)</option><option value="low">Low (&lt; 70)</option></select></label>
+                        <label>Sort<select id="smFSort" class="sm-input"><option value="review">Needs review first</option><option value="recent">Most recent</option><option value="title">Title</option><option value="score">Score</option></select></label>
+                        <label>Search<input id="smFSearch" class="sm-input" type="search" maxlength="200" placeholder="Title"></label>
+                    </div>
+                    <div class="sm-row">
+                        <button is="emby-button" type="button" class="raised emby-button" id="smApplySelected" disabled><span>Apply selected (0)</span></button>
+                        <span class="sm-scope" role="radiogroup" aria-label="Apply all eligible scope">
+                            <label><input type="radio" name="smScope" value="filter" checked> current filter</label>
+                            <label><input type="radio" name="smScope" value="all"> entire report</label>
+                        </span>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smApplyAll"><span>Apply all eligible…</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smExportCsv"><span>Export CSV</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smExportJson"><span>Export JSON</span></button>
+                    </div>
+                    <div id="smBatchProgress" class="sm-panel sm-hidden" aria-live="polite"></div>
+                    <div id="smEmpty" class="sm-panel sm-hidden"></div>
+                    <div class="sm-table-wrap">
+                        <table class="sm-table" id="smFindingsTable">
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox" id="smSelectPage" aria-label="Select all rows on this page"></th>
+                                    <th>Original title</th>
+                                    <th>Proposed title</th>
+                                    <th class="sm-hide-mobile">Type</th>
+                                    <th class="sm-hide-mobile">Library</th>
+                                    <th>Candidate</th>
+                                    <th>Score / reason</th>
+                                    <th>Status</th>
+                                    <th class="sm-hide-mobile">Origin</th>
+                                    <th class="sm-hide-mobile">Last checked</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="sm-pager">
+                        <button is="emby-button" type="button" class="raised emby-button" id="smPrev"><span>Previous</span></button>
+                        <span id="smPageInfo"></span>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smNext"><span>Next</span></button>
+                    </div>
+                    <div id="smDetail" class="sm-panel sm-hidden" tabindex="-1"></div>
+                </section>
+
+                <section id="smTabHistory" role="tabpanel" aria-label="History" class="sm-hidden">
+                    <h3>Change history</h3>
+                    <div class="sm-table-wrap"><table class="sm-table" id="smDecisions"><thead><tr><th>Time</th><th>Action</th><th>Origin</th><th>Item</th><th>Outcome</th><th>Details</th></tr></thead><tbody></tbody></table></div>
+                    <div class="sm-pager">
+                        <button is="emby-button" type="button" class="raised emby-button" id="smDecPrev"><span>Previous</span></button>
+                        <span id="smDecInfo"></span>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smDecNext"><span>Next</span></button>
+                    </div>
+                    <h3>Bulk runs</h3>
+                    <div class="sm-table-wrap"><table class="sm-table" id="smBatches"><thead><tr><th>Started</th><th>Scope</th><th>Status</th><th>Outcomes</th></tr></thead><tbody></tbody></table></div>
+                    <h3>Audit and reconciliation runs</h3>
+                    <div class="sm-table-wrap"><table class="sm-table" id="smRuns"><thead><tr><th>Started</th><th>Kind</th><th>Status</th><th>Queued</th><th>Searches</th><th>Outcomes</th><th>Provider errors</th></tr></thead><tbody></tbody></table></div>
+                </section>
+
+                <section id="smTabSettings" role="tabpanel" aria-label="Settings" class="sm-hidden">
+                    <form id="smSettingsForm">
+                        <h3>Apply mode</h3>
+                        <div class="sm-panel">
+                            <label><input type="radio" name="smModeRadio" value="ReportOnly"> <strong>Report only</strong> (default): scan, audit and report; never change Jellyfin metadata on its own.</label><br>
+                            <label><input type="radio" name="smModeRadio" value="AutoApplyHighConfidence"> <strong>Auto-apply high-confidence matches</strong> in the libraries ticked below. Ambiguous, weak or conflicting matches always stay in the report.</label>
+                            <p class="sm-small sm-muted">Apply one, Apply selected and Apply all eligible are available in either mode.</p>
+                        </div>
+
+                        <h3>Libraries</h3>
+                        <label><input type="checkbox" id="smAllLibraries"> Check every Movies, Shows and Mixed library</label>
+                        <div class="sm-table-wrap"><table class="sm-table" id="smLibraries"><thead><tr><th>Library</th><th>Type</th><th>Checked</th><th>Auto-apply</th><th>Sidecar saving</th></tr></thead><tbody></tbody></table></div>
+
+                        <h3>Scan monitoring and audits</h3>
+                        <div class="sm-grid2">
+                            <label><input type="checkbox" id="smMonitor"> Monitor new library scans</label>
+                            <label><input type="checkbox" id="smInitialAudit"> Audit existing media after first installation (report-only)</label>
+                            <label><input type="checkbox" id="smDeferScan"> Wait for a running library scan before searching</label>
+                            <label>Settle delay after the last item event (seconds)<input type="number" id="smSettle" class="sm-input" min="5" max="3600"></label>
+                            <label>Startup delay (seconds)<input type="number" id="smStartup" class="sm-input" min="0" max="3600"></label>
+                        </div>
+
+                        <h3>Provider requests</h3>
+                        <div class="sm-grid2">
+                            <label>Minimum pause between searches (ms)<input type="number" id="smInterval" class="sm-input" min="250" max="60000"></label>
+                            <label>Timeout per provider request (s)<input type="number" id="smTimeout" class="sm-input" min="5" max="300"></label>
+                            <label>Attempts for transient failures<input type="number" id="smAttempts" class="sm-input" min="1" max="3"></label>
+                            <label>Maximum searches per audit run<input type="number" id="smBudget" class="sm-input" min="10" max="100000"></label>
+                        </div>
+                        <p class="sm-small sm-muted">Searches use each library's enabled metadata providers, one at a time. Only the cleaned title and year are sent.</p>
+
+                        <h3>Applying a match</h3>
+                        <div class="sm-grid2">
+                            <label>After writing the provider id, Jellyfin refreshes with<select id="smProfile" class="sm-input">
+                                <option value="FillMissing">Fill missing metadata only (default)</option>
+                                <option value="ReplaceUnlockedText">Replace unlocked text metadata, keep images</option>
+                            </select></label>
+                            <label><input type="checkbox" id="smWriteTitle"> Replace the title when it is still the unedited filename-derived title</label>
+                            <label>Refresh timeout (s)<input type="number" id="smRefreshTimeout" class="sm-input" min="30" max="7200"></label>
+                        </div>
+
+                        <h3>Automatic policy</h3>
+                        <div class="sm-grid2">
+                            <label>Minimum score (90-100)<input type="number" id="smAutoScore" class="sm-input" min="90" max="100"></label>
+                            <label>Minimum lead over runner-up<input type="number" id="smAutoMargin" class="sm-input" min="5" max="50"></label>
+                            <label>Year tolerance for partial credit<input type="number" id="smYearTol" class="sm-input" min="0" max="2"></label>
+                            <label><input type="checkbox" id="smRequireYear"> Require a trusted year for automation</label>
+                        </div>
+
+                        <h3>Prefix rules</h3>
+                        <p class="sm-small sm-muted">Built-in rules remove known release-site watermarks such as <code>www.UIndex.org -</code>. Custom rules are regular expressions anchored at the start of the name. A rule can only be enabled when its example input produces its expected output.</p>
+                        <div id="smBuiltInRules" class="sm-small"></div>
+                        <div class="sm-table-wrap"><table class="sm-table sm-rules" id="smRules"><thead><tr><th>Id</th><th>Pattern</th><th>Example input</th><th>Expected output</th><th>Enabled</th><th></th></tr></thead><tbody></tbody></table></div>
+                        <button is="emby-button" type="button" class="raised emby-button" id="smAddRule"><span>Add rule</span></button>
+
+                        <h3>Name preview</h3>
+                        <div class="sm-row">
+                            <input id="smPreviewName" class="sm-input" style="flex: 1; min-width: 16em" maxlength="512" placeholder="www.UIndex.org - The.Show.S01E01.1080p.mkv" aria-label="Name to preview">
+                            <select id="smPreviewType" class="sm-input" aria-label="Media type"><option value="Series">Series</option><option value="Movie">Movie</option></select>
+                            <label><input type="checkbox" id="smPreviewFile"> filename</label>
+                            <button is="emby-button" type="button" class="raised emby-button" id="smPreviewBtn"><span>Preview</span></button>
+                        </div>
+                        <div id="smPreviewOut" class="sm-trace"></div>
+
+                        <h3>Advanced</h3>
+                        <div class="sm-grid2">
+                            <label>Extra provider id keys that may be written (comma separated)<input type="text" id="smExtraKeys" class="sm-input" placeholder="AniDB"></label>
+                            <label>Keep decisions for (days)<input type="number" id="smRetDays" class="sm-input" min="1" max="365"></label>
+                            <label>Maximum stored decisions<input type="number" id="smRetMax" class="sm-input" min="100" max="50000"></label>
+                            <label><input type="checkbox" id="smDebugPaths"> Allow full paths in debug logs</label>
+                        </div>
+
+                        <div id="smSettingsErrors" class="sm-error sm-hidden" role="alert"></div>
+                        <div class="sm-row" style="margin-top: 1em">
+                            <button is="emby-button" type="submit" class="raised button-submit emby-button"><span>Save</span></button>
+                        </div>
+                    </form>
+                </section>
+
+                <section id="smTabSafety" role="tabpanel" aria-label="Safe operation" class="sm-hidden">
+                    <h3>How Smart Match stays safe</h3>
+                    <ul>
+                        <li>It never renames, moves, deletes or edits media files or folders. Plex, qBittorrent and other tools that share the same paths are unaffected.</li>
+                        <li>Report only is the default. Nothing in Jellyfin changes until an admin clicks <em>Apply</em>, confirms a bulk preview, or explicitly enables auto-apply for a library.</li>
+                        <li>Before every write it re-reads the item and aborts on any change: a new provider id, a lock, a different path or an edited title.</li>
+                        <li>It writes only the selected provider ids (and the title, when it is still the unedited filename-derived title), then asks Jellyfin for a normal refresh that fills missing metadata. Existing images are never replaced; locked fields stay locked.</li>
+                        <li>Ambiguous titles such as <em>The Office</em> without a year are never applied in bulk or automatically.</li>
+                        <li>Every change is recorded and can be rolled back while nobody else has edited the same fields.</li>
+                    </ul>
+                    <h3>Jellyfin's own sidecar files</h3>
+                    <p>If a library has <em>metadata savers</em> (for example NFO) or <em>Save artwork into media folders</em> enabled, <strong>Jellyfin itself</strong> writes those files next to the media during any refresh, including one Smart Match requests. Smart Match flags such libraries, blocks unattended auto-apply there until you acknowledge it, and recommends mounting media read-only in Docker.</p>
+                    <p class="sm-small sm-muted" id="smDataDir"></p>
+                </section>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

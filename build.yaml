@@ -1,0 +1,20 @@
+---
+name: "Smart Match"
+guid: "4b7fecfd-bc55-4216-b032-2947ec6c22c9"
+version: "1.0.0.0"
+targetAbi: "12.0.0.0"
+framework: "net10.0"
+overview: "Review and repair metadata matches from messy filenames."
+description: >
+  Safely identifies Jellyfin films and series whose folder or file names carry
+  release-site watermarks or release tags. Builds a findings report from new
+  scans and existing libraries, applies matches one at a time, in selected
+  batches or (opt-in) automatically, and never renames or moves media files.
+category: "Metadata"
+owner: "clemarc"
+artifacts:
+  - "Jellyfin.Plugin.SmartMatch.dll"
+changelog: >
+  Initial release: continuous scan monitoring, existing-library audit,
+  persistent findings report, selective and bulk apply, opt-in automatic
+  matching and conditional rollback.
