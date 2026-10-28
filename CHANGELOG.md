@@ -1,6 +1,11 @@
 # Changelog
 
-## 1.0.0.0 (unreleased)
+## 1.0.1.0 (unreleased)
+
+- The same series or film returned by two providers with different ids (for example a TMDb id from TheMovieDb and an IMDb id from OMDb) is now one candidate carrying both ids, instead of two candidates that block each other as "near-equivalent rivals". Results merge only when the title and year are identical, no id disagrees, and no single provider returned two works with that title and year.
+- After an update that changes ranking, open findings (Proposed and Needs review) are re-ranked at startup from their saved candidates. No provider is searched again, nothing is applied automatically, and applied, ignored and rejected findings are left alone.
+
+## 1.0.0.0
 
 Initial release for Jellyfin 12 (target ABI 12.0.0.0, .NET 10).
 

@@ -51,6 +51,85 @@ public class MatchingTests
     }
 
     [Fact]
+    public void Same_work_from_two_providers_with_disjoint_ids_is_one_candidate()
+    {
+        var q = Query("www.UIndex.org - Chicago.Fire.S14E08.1080p.WEB.h264-ETHEL", MediaKind.Series, NameSourceKind.SeriesFolder);
+        var result = Ranker.Classify(
+            MediaKind.Series,
+            q,
+            new[]
+            {
+                C("Chicago Fire", 2012, "44006"),
+                C("Chicago Fire", 2012, null, "The Open Movie Database", "tt2261391"),
+                C("Chicago Fire FC", 1998, null, "The Open Movie Database", "tt40309254"),
+                C("Chicago Fire: I Am a Firefighter", 2014, null, "The Open Movie Database", "tt4120900"),
+            },
+            false);
+        Assert.Equal(FindingStatus.Proposed, result.Status);
+        Assert.Equal(3, result.Candidates.Count);
+        var top = result.Candidates[0];
+        Assert.Equal("tmdb:44006", result.RecommendedCandidateId);
+        Assert.Equal("tt2261391", top.ProviderIds["Imdb"]);
+        Assert.Equal(80, top.RankScore);
+        Assert.Contains(top.Reasons, r => r.StartsWith("same title and year", StringComparison.Ordinal));
+        Assert.False(top.AutoEligible);
+        Assert.DoesNotContain(result.AutoBlockers, b => b.Contains("rival", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Two_works_with_one_title_and_year_from_one_provider_are_never_merged()
+    {
+        var result = Ranker.Classify(
+            MediaKind.Series,
+            Query("Ghosts", MediaKind.Series, NameSourceKind.SeriesFolder),
+            new[]
+            {
+                C("Ghosts", 2019, "100"),
+                C("Ghosts", 2019, "200"),
+                C("Ghosts", 2019, null, "The Open Movie Database", "tt8594324"),
+            },
+            false);
+        Assert.Equal(FindingStatus.NeedsReview, result.Status);
+        Assert.Equal(3, result.Candidates.Count);
+    }
+
+    [Fact]
+    public void Title_and_year_merge_needs_agreeing_ids_and_identical_years()
+    {
+        var result = Ranker.Classify(
+            MediaKind.Movie,
+            Query("Heat"),
+            new[]
+            {
+                C("Heat", 1995, "949"),
+                C("Heat", 1995, "999", "The Open Movie Database", "tt0113277"),
+                C("Heat", 1986, null, "The Open Movie Database", "tt0093164"),
+            },
+            false);
+        Assert.Equal(3, result.Candidates.Count);
+        Assert.Equal(FindingStatus.NeedsReview, result.Status);
+    }
+
+    [Fact]
+    public void Reclassify_from_stored_candidates_merges_without_new_results()
+    {
+        var q = Query("www.UIndex.org - Chicago.Fire.S14E08.1080p.WEB.h264-ETHEL", MediaKind.Series, NameSourceKind.SeriesFolder);
+        var stored = new List<CandidateRecord>
+        {
+            new() { CandidateId = "tmdb:44006", Name = "Chicago Fire", Year = 2012, ProviderName = "TheMovieDb", Providers = new() { "TheMovieDb" }, ProviderIds = new() { ["Tmdb"] = "44006" } },
+            new() { CandidateId = "imdb:tt2261391", Name = "Chicago Fire", Year = 2012, ProviderName = "The Open Movie Database", Providers = new() { "The Open Movie Database" }, ProviderIds = new() { ["Imdb"] = "tt2261391" } },
+            new() { CandidateId = "tmdb:1", Name = "Chicago Fire FC", Year = 1998, ProviderName = "TheMovieDb", Providers = new() { "TheMovieDb", "The Open Movie Database" }, ProviderIds = new() { ["Tmdb"] = "1", ["Imdb"] = "tt40309254" } },
+        };
+        var result = Ranker.Reclassify(MediaKind.Series, q, stored, false);
+        Assert.Equal(FindingStatus.Proposed, result.Status);
+        Assert.Equal(2, result.Candidates.Count);
+        Assert.Equal("tmdb:44006", result.RecommendedCandidateId);
+        Assert.Equal(2, result.Candidates[0].ProviderIds.Count);
+        Assert.Equal(2, result.Candidates[1].Providers.Count);
+        Assert.All(result.Candidates, c => Assert.DoesNotContain(c.ProviderIds.Keys, k => k.StartsWith("SmartMatch", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void Ambiguous_the_office_without_year_needs_review_and_is_never_automatic()
     {
         var q = Query("The.Office.S03E05.720p.WEB-DL.mkv", MediaKind.Series, NameSourceKind.EpisodeFile);

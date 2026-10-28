@@ -254,8 +254,63 @@ public sealed class ItemAnalyzer
         return Save(item, finding, itemFingerprint, queryFingerprint, classification.Status.ToString(), now, true);
     }
 
+    /// <summary>
+    /// Re-ranks open findings classified by an older <see cref="MatchCandidateRanker.Revision"/> from
+    /// their saved candidates. No provider is searched, nothing is written to Jellyfin and nothing is
+    /// applied automatically; reviewed, applied, ignored and rejected findings are left alone.
+    /// </summary>
+    /// <returns>Number of findings re-ranked.</returns>
+    public int RerankStoredFindings()
+    {
+        var config = _config.Current;
+        var ranker = new MatchCandidateRanker(new ProviderIdValidator(config.ExtraProviderIdKeys), ConfigurationValidator.BuildMatchSettings(config));
+        var stale = _store.QueryFindings(f => f.RankerRevision < MatchCandidateRanker.Revision
+            && f.Status is FindingStatus.Proposed or FindingStatus.NeedsReview
+            && f.Candidates.Count > 0);
+        var count = 0;
+        foreach (var f in stale)
+        {
+            using var itemLock = _locks.TryAcquire(f.ItemId, "rerank");
+            if (itemLock is null)
+            {
+                continue;
+            }
+
+            // Only safe names reach a search, so every finding with candidates had a safe normalization.
+            var query = new NormalizationResult(
+                f.SourceName,
+                f.SearchTitle,
+                f.ComparisonKey,
+                f.TrustedYear,
+                f.EpisodeContext,
+                new Dictionary<string, string>(),
+                Array.Empty<NormalizationStep>(),
+                f.SourceKind,
+                true,
+                f.Warnings);
+            var classification = ranker.Reclassify(f.MediaType, query, f.Candidates, f.ProviderErrors.Count > 0);
+            var result = _store.TryUpdateFinding(f.ReviewId, f.Version, x =>
+            {
+                SetResult(x, classification.Status, classification.Status.ToString().ToUpperInvariant(), classification.Reason, classification.Candidates, classification.RecommendedCandidateId, classification.AutoBlockers);
+                return true;
+            }, out _);
+            if (result == UpdateResult.Updated)
+            {
+                count++;
+            }
+        }
+
+        if (count > 0)
+        {
+            _logger.LogInformation("Smart Match re-ranked {Count} finding(s) from saved candidates after a ranking update", count);
+        }
+
+        return count;
+    }
+
     private static void SetResult(Finding finding, FindingStatus status, string code, string reason, List<CandidateRecord> candidates, string? recommended, List<string> blockers)
     {
+        finding.RankerRevision = MatchCandidateRanker.Revision;
         finding.Status = status;
         finding.ReasonCode = code;
         finding.Reason = reason;

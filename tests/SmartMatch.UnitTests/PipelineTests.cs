@@ -5,6 +5,7 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.SmartMatch.Configuration;
+using Jellyfin.Plugin.SmartMatch.Matching;
 using Jellyfin.Plugin.SmartMatch.Model;
 using Jellyfin.Plugin.SmartMatch.Normalization;
 using Jellyfin.Plugin.SmartMatch.Services;
@@ -259,6 +260,66 @@ public class PipelineTests
         var outcome = await restarted.Analyze(item.Id);
         Assert.Equal("Skipped:ALREADY_IDENTIFIED", outcome.Code);
         Assert.Equal(0, restarted.Library.Writes);
+        h.Dispose();
+    }
+
+    [Fact]
+    public async Task Ranking_update_reranks_open_findings_at_startup_without_searching()
+    {
+        var (h, tv, _) = Setup();
+        h.Providers.ProviderNames.Add("The Open Movie Database");
+        h.Providers.Add(MediaKind.Series, "Chicago Fire", 2012, "44006");
+        h.Providers.Catalogue.Add(("Chicago Fire", 2012, MediaKind.Series, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Imdb"] = "tt2261391" }, "The Open Movie Database"));
+        var fire = h.Library.Add(tv, MediaKind.Series, "/media/tv/www.UIndex.org - Chicago.Fire.S14E08.1080p.WEB.h264-ETHEL");
+        var office = h.Library.Add(tv, MediaKind.Series, "/media/tv/The Office");
+        var f = (await h.Analyze(fire.Id)).Finding!;
+        var o = (await h.Analyze(office.Id)).Finding!;
+        Assert.Equal(FindingStatus.Proposed, f.Status);
+
+        // Rewrite both findings as 1.0.0.0 left them: Chicago Fire split into two rival candidates,
+        // The Office ignored by the admin.
+        h.Store.TryUpdateFinding(f.ReviewId, null, x =>
+        {
+            x.RankerRevision = 0;
+            x.Status = FindingStatus.NeedsReview;
+            x.Candidates = new List<CandidateRecord>
+            {
+                new() { CandidateId = "tmdb:44006", Name = "Chicago Fire", Year = 2012, ProviderName = "TheMovieDb", Providers = new() { "TheMovieDb" }, ProviderIds = new() { ["Tmdb"] = "44006" } },
+                new() { CandidateId = "imdb:tt2261391", Name = "Chicago Fire", Year = 2012, ProviderName = "The Open Movie Database", Providers = new() { "The Open Movie Database" }, ProviderIds = new() { ["Imdb"] = "tt2261391" } },
+            };
+            return true;
+        }, out _);
+        h.Store.TryUpdateFinding(o.ReviewId, null, x =>
+        {
+            x.RankerRevision = 0;
+            x.Status = FindingStatus.Ignored;
+            return true;
+        }, out _);
+        await h.Store.FlushAsync(CancellationToken.None);
+
+        using var restarted = new Harness(h.Directory);
+        foreach (var (k, v) in h.Library.Items)
+        {
+            restarted.Library.Items[k] = v;
+        }
+
+        restarted.Library.Libraries.AddRange(h.Library.Libraries);
+        restarted.Providers.ProviderNames.Add("The Open Movie Database");
+        restarted.Providers.Catalogue.AddRange(h.Providers.Catalogue);
+        restarted.Worker.RecoverForTests();
+
+        var reranked = restarted.FindingFor(fire.Id);
+        Assert.Equal(FindingStatus.Proposed, reranked.Status);
+        Assert.Equal(MatchCandidateRanker.Revision, reranked.RankerRevision);
+        Assert.Equal("tmdb:44006", reranked.RecommendedCandidateId);
+        Assert.Single(reranked.Candidates);
+        Assert.Equal(FindingStatus.Ignored, restarted.FindingFor(office.Id).Status);
+        Assert.Empty(restarted.Providers.Queries);
+        Assert.Equal(0, restarted.Library.Writes);
+
+        // The next scan of the unchanged item does not search again either.
+        Assert.Equal("Unchanged", (await restarted.Analyze(fire.Id)).Code);
+        Assert.Empty(restarted.Providers.Queries);
         h.Dispose();
     }
 

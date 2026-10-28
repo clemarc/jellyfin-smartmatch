@@ -40,6 +40,8 @@ sha256sum -c SHA256SUMS.txt
 
 Catalogue installs: **Dashboard → Plugins → My plugins → Smart Match → Update** (or let Jellyfin's automatic plugin updates do it), then restart. Settings, the findings report and the change history live in `/config/plugins/configurations/SmartMatch/` and `/config/plugins/configurations/Jellyfin.Plugin.SmartMatch.xml`, outside the versioned plugin folder, so they survive updates (tested: AT-15).
 
+When an update changes how candidates are ranked, Smart Match re-ranks open findings (Proposed and Needs review) from the candidates it saved, on the first start after the update. It does not search the providers again, does not apply anything automatically, and leaves applied, ignored and rejected findings as they are. A finding is searched again only when its name, year, rules or the library's providers change, or when you click **Retry analysis**.
+
 ## Manual install (no catalogue)
 
 1. Download `smartmatch_<version>-jf12.zip` from the GitHub release (or the `plugin` artifact of a CI run).

@@ -120,6 +120,9 @@ public sealed class Finding
     /// <summary>Gets or sets reasons the recommended candidate cannot be applied automatically.</summary>
     public List<string> AutoBlockers { get; set; } = new();
 
+    /// <summary>Gets or sets the ranker revision that produced the classification (0 before 1.0.1).</summary>
+    public int RankerRevision { get; set; }
+
     /// <summary>Gets or sets provider failures from the last search.</summary>
     public List<string> ProviderErrors { get; set; } = new();
 
