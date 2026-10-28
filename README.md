@@ -32,7 +32,7 @@ Add this repository in **Dashboard → Plugins → Repositories**, install **Sma
 https://raw.githubusercontent.com/clemarc/jellyfin-smartmatch/catalog/manifest.json
 ```
 
-The catalogue is published by the release workflow when the owner pushes the first `v1.0.0.0` tag; until then use the ZIP from a CI run. Full instructions, manual install, updates and Docker advice: [docs/install.md](docs/install.md). Daily use: [docs/operations.md](docs/operations.md).
+The catalogue is published by the release workflow when the owner creates the first `v1.0.0.0` tag (pushed from git or via a release published in the GitHub web UI); until then use the ZIP from a CI run. Full instructions, manual install, updates and Docker advice: [docs/install.md](docs/install.md). Daily use: [docs/operations.md](docs/operations.md).
 
 ## Compatibility
 

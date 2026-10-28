@@ -1,7 +1,9 @@
 name: Release
 
-# Publishing is owner-initiated: pushing a vX.Y.Z.W tag (or re-running for an existing tag via
-# workflow_dispatch) is the authorization. Nothing here deploys to a Jellyfin server.
+# Publishing is owner-initiated. Either push a vX.Y.Z.W tag from git, or publish a release in the
+# GitHub web UI with a new vX.Y.Z.W tag (creating the tag starts this workflow, which then attaches
+# the ZIP to that release). workflow_dispatch re-runs an existing tag. Nothing here deploys to a
+# Jellyfin server.
 on:
   push:
     tags: ["v*.*.*.*"]
@@ -119,26 +121,10 @@ jobs:
         with:
           name: release
           path: dist
-      - name: Create GitHub Release (immutable assets)
-        run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG exists; verifying published bytes instead of replacing them."
-            gh release download "$TAG" --pattern "$ZIP" --dir /tmp/existing
-            if ! cmp -s "/tmp/existing/$ZIP" "dist/$ZIP"; then
-              echo "::error::Published $ZIP differs from this build. Published versions are immutable; bump the version."
-              exit 1
-            fi
-          else
-            cat > /tmp/notes.md <<EOF
-          Smart Match $VERSION for Jellyfin 12 (target ABI 12.0.0.0, .NET 10, AnyCPU: Linux x64 and ARM64).
-
-          Install: Dashboard → Plugins → Repositories → add
-          \`https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/catalog/manifest.json\`, then install **Smart Match** from the catalogue and restart Jellyfin.
-
-          SHA-256: \`$(cut -d' ' -f1 dist/SHA256SUMS.txt)\` · MD5 (manifest checksum): \`$(cat dist/$ZIP.md5)\`
-          EOF
-            gh release create "$TAG" "dist/$ZIP" dist/SHA256SUMS.txt --title "Smart Match $VERSION" --notes-file /tmp/notes.md --verify-tag
-          fi
+      - name: Create or complete the GitHub Release (immutable assets)
+        # Handles a tag pushed from git (creates the release), a release published in the
+        # GitHub web UI (attaches the ZIP to it) and re-runs (verifies the published bytes).
+        run: scripts/publish-github-release.sh "$TAG" "$VERSION" "dist/$ZIP" dist/SHA256SUMS.txt "dist/$ZIP.md5"
       - name: Wait until the release asset is publicly downloadable and identical
         run: |
           URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ZIP}"

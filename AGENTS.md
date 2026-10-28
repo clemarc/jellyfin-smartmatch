@@ -61,7 +61,7 @@ Add a fixture to `NormalizerTests.Fixtures` first, then change `MediaNameNormali
 ## Releasing (owner only)
 
 1. Bump `<Version>` in `Directory.Build.props` and `version` in `build.yaml` (four-part, e.g. `1.0.1.0`); update `CHANGELOG.md`.
-2. Merge to `main`, then push tag `v1.0.1.0`. `release.yml` validates the tag, builds, tests, runs the disposable-server gate, creates the GitHub Release, updates `manifest.json` on the `catalog` branch and verifies the public catalogue.
+2. Merge to `main`, then create tag `v1.0.1.0` on `main`, either `git tag v1.0.1.0 && git push origin v1.0.1.0`, or on github.com (works from a phone browser): Releases → Draft a new release → type `v1.0.1.0` as a new tag on `main` → Publish. `release.yml` validates the tag, builds, tests, runs the disposable-server gate, creates the GitHub Release (or attaches the ZIP to the one made in the web UI, keeping any notes written there), updates `manifest.json` on the `catalog` branch and verifies the public catalogue. Until the workflow finishes, a release made in the web UI has no ZIP; that is expected.
 3. If catalogue publication fails, re-run the workflow with `workflow_dispatch` and the same tag. It never replaces published bytes.
 
 Changing the Jellyfin baseline: update `JellyfinPackageVersion`, `targetAbi`, the guards in `release.yml`, image pins in the workflows and `docs/compatibility.md` together.
