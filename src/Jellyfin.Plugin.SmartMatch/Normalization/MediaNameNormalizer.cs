@@ -112,6 +112,61 @@ public sealed partial class MediaNameNormalizer : IMediaNameNormalizer
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(rules);
 
+        // Run to a fixed point so the output is idempotent by construction: a later pass can only
+        // expose structure (e.g. a trailing year once a qualifier is gone), never reintroduce noise.
+        var result = NormalizeOnce(input, rules);
+        for (var pass = 0; pass < 3 && result.IsSafe; pass++)
+        {
+            var again = NormalizeOnce(new MediaNameInput(result.SearchTitle, NameSourceKind.Preview, input.Kind), rules);
+            if (!again.IsSafe)
+            {
+                // The "title" only survived because of surrounding noise (e.g. "x265 1917"): not usable.
+                result = result with
+                {
+                    SearchTitle = string.Empty,
+                    ComparisonKey = string.Empty,
+                    IsSafe = false,
+                    Warnings = result.Warnings.Append("no usable title text remains after cleaning").Distinct(StringComparer.Ordinal).ToList(),
+                };
+                break;
+            }
+
+            if (again.SearchTitle == result.SearchTitle)
+            {
+                break;
+            }
+
+            var warnings = result.Warnings.Concat(again.Warnings).Distinct(StringComparer.Ordinal).ToList();
+            var year = result.TrustedYear;
+            if (again.TrustedYear is { } y)
+            {
+                if (year is null)
+                {
+                    year = y;
+                }
+                else if (year != y)
+                {
+                    warnings.Add("several year-like numbers; no year is trusted");
+                    year = null;
+                }
+            }
+
+            result = result with
+            {
+                SearchTitle = again.SearchTitle,
+                ComparisonKey = again.ComparisonKey,
+                TrustedYear = year,
+                Steps = result.Steps.Concat(again.Steps).ToList(),
+                Warnings = warnings,
+            };
+        }
+
+        return result;
+    }
+
+    private NormalizationResult NormalizeOnce(MediaNameInput input, RuleSet rules)
+    {
+
         var steps = new List<NormalizationStep>();
         var warnings = new List<string>();
         var hints = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -151,8 +206,8 @@ public sealed partial class MediaNameNormalizer : IMediaNameNormalizer
             return " ";
         });
 
-        // 3. Anchored site watermarks.
-        s = rules.StripPrefixes(s, steps, warnings);
+        // 3. Anchored site watermarks (after leading separator debris).
+        s = rules.StripPrefixes(TrimDebris(s), steps, warnings);
         s = TrimDebris(s);
 
         // 4. Find where the title ends.
@@ -181,7 +236,12 @@ public sealed partial class MediaNameNormalizer : IMediaNameNormalizer
             }
         }
 
-        var yearMatch = FindYear(s, cut);
+        var yearMatch = FindYear(s, cut, out var yearAmbiguous);
+        if (yearAmbiguous)
+        {
+            warnings.Add("several year-like numbers; no year is trusted");
+        }
+
         if (yearMatch is { } ym)
         {
             year = ym.Year;
@@ -270,7 +330,7 @@ public sealed partial class MediaNameNormalizer : IMediaNameNormalizer
 
     private static bool IsOnlyReleaseToken(string title)
     {
-        var trimmed = title.Trim();
+        var trimmed = title.Trim().Trim('[', ']', '(', ')', '{', '}', ' ');
         var m = StrongReleaseTokenRegex().Match(trimmed);
         return m.Success && m.Index == 0 && m.Length == trimmed.Length;
     }
@@ -440,8 +500,9 @@ public sealed partial class MediaNameNormalizer : IMediaNameNormalizer
         return -1;
     }
 
-    private (int Index, int Year)? FindYear(string full, int cut)
+    private (int Index, int Year)? FindYear(string full, int cut, out bool ambiguous)
     {
+        ambiguous = false;
         var maxYear = _maxYear();
         foreach (Match m in YearRegex().Matches(full))
         {
@@ -467,6 +528,17 @@ public sealed partial class MediaNameNormalizer : IMediaNameNormalizer
             var after = full[(m.Index + m.Length)..];
             if (bracketed || IsReleaseContext(after))
             {
+                // "1917.2019" is title + year, but "Movie.2019.1917" cannot be resolved safely:
+                // trust no year rather than guess (and stay idempotent).
+                var previous = TrailingYearRegex().Match(before.TrimEnd(' ', '.', '_', '-', '(', ')', '[', ']'));
+                if (previous.Success
+                    && int.Parse(previous.Groups["year"].Value, CultureInfo.InvariantCulture) is var prevYear && prevYear >= 1880 && prevYear <= maxYear
+                    && HasTitleText(before[..previous.Index]))
+                {
+                    ambiguous = true;
+                    return null;
+                }
+
                 return (m.Index, year);
             }
         }
@@ -477,6 +549,12 @@ public sealed partial class MediaNameNormalizer : IMediaNameNormalizer
     private static bool IsReleaseContext(string after)
     {
         var rest = after.TrimStart('.', '_', ' ', '-', ')', ']', '}');
+        var qualifier = CountryQualifiers.FirstOrDefault(q => rest.StartsWith(q, StringComparison.Ordinal) && (rest.Length == q.Length || !char.IsLetterOrDigit(rest[q.Length])));
+        if (qualifier is not null)
+        {
+            rest = rest[qualifier.Length..].TrimStart('.', '_', ' ', '-', ')', ']', '}');
+        }
+
         if (rest.Length == 0)
         {
             return true;
@@ -512,29 +590,32 @@ public sealed partial class MediaNameNormalizer : IMediaNameNormalizer
     private static string NormalizeSeparators(string title, List<NormalizationStep> steps)
     {
         var trimmed = TrimDebris(title);
-        var hasWhitespace = trimmed.Any(char.IsWhiteSpace);
-        var usesDots = DottedWordRegex().IsMatch(trimmed);
-        var usesUnderscores = trimmed.Contains('_', StringComparison.Ordinal);
-
-        if (usesUnderscores)
+        if (trimmed.Contains('_', StringComparison.Ordinal))
         {
             trimmed = trimmed.Replace('_', ' ');
             steps.Add(new NormalizationStep("replaced separators", "_ → space"));
-            hasWhitespace = true;
         }
 
-        if (usesDots && !hasWhitespace)
+        // Dots between letters are release separators; acronyms, abbreviations and decimals keep theirs.
+        // Applied per word so the result does not depend on whether other words had spaces.
+        var words = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var changed = false;
+        for (var i = 0; i < words.Length; i++)
         {
-            var rebuilt = RebuildDotted(trimmed);
-            if (rebuilt != trimmed)
+            if (DottedWordRegex().IsMatch(words[i]))
             {
-                steps.Add(new NormalizationStep("replaced separators", ". → space"));
+                var rebuilt = RebuildDotted(words[i]);
+                changed |= rebuilt != words[i];
+                words[i] = rebuilt;
             }
-
-            return rebuilt;
         }
 
-        return trimmed;
+        if (changed)
+        {
+            steps.Add(new NormalizationStep("replaced separators", ". → space"));
+        }
+
+        return string.Join(' ', words);
     }
 
     private static string RebuildDotted(string s)
@@ -610,7 +691,7 @@ public sealed partial class MediaNameNormalizer : IMediaNameNormalizer
                 break;
             }
 
-            var remaining = current[..m.Index].TrimEnd(' ', '-', '.', '_');
+            var remaining = TrimDebris(current[..m.Index]);
             var words = remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (words.Length == 0 || words.All(w => Articles.Contains(w)))
             {
@@ -672,6 +753,9 @@ public sealed partial class MediaNameNormalizer : IMediaNameNormalizer
 
     [GeneratedRegex(@"(?<open>[\(\[\{])?(?<![0-9A-Za-z])(?<year>(?:18|19|20)\d{2})(?![0-9A-Za-z])(?<close>[\)\]\}])?", RegexOptions.CultureInvariant)]
     private static partial Regex YearRegex();
+
+    [GeneratedRegex(@"(?<![0-9A-Za-z])(?<year>(?:18|19|20)\d{2})$", RegexOptions.CultureInvariant)]
+    private static partial Regex TrailingYearRegex();
 
     [GeneratedRegex(@"^[\(\[\{]?(?:18|19|20)\d{2}[\)\]\}]?", RegexOptions.CultureInvariant)]
     private static partial Regex YearRemovalRegex();

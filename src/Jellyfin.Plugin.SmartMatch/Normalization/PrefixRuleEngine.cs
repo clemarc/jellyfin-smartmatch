@@ -78,8 +78,9 @@ public sealed class RuleSet
     /// <param name="pattern">User pattern.</param>
     /// <param name="regex">Compiled regex when valid.</param>
     /// <param name="error">Error description when invalid.</param>
+    /// <param name="enforceLengthLimit">Apply the user-rule length limit (built-in rules are exempt).</param>
     /// <returns>True when valid.</returns>
-    public static bool TryCompile(string? pattern, out Regex? regex, out string? error)
+    public static bool TryCompile(string? pattern, out Regex? regex, out string? error, bool enforceLengthLimit = true)
     {
         regex = null;
         if (string.IsNullOrWhiteSpace(pattern))
@@ -88,7 +89,7 @@ public sealed class RuleSet
             return false;
         }
 
-        if (pattern.Length > MaxPatternLength)
+        if (enforceLengthLimit && pattern.Length > MaxPatternLength)
         {
             error = string.Create(CultureInfo.InvariantCulture, $"Pattern is longer than {MaxPatternLength} characters.");
             return false;

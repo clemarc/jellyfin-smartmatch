@@ -227,10 +227,11 @@ public static class ConfigurationValidator
     /// </summary>
     /// <param name="pattern">Pattern.</param>
     /// <param name="sample">Sample input.</param>
+    /// <param name="builtIn">True for built-in rules (no user length limit).</param>
     /// <returns>The remainder, or null when the pattern does not match.</returns>
-    public static string? PreviewRule(string pattern, string? sample)
+    public static string? PreviewRule(string pattern, string? sample, bool builtIn = false)
     {
-        if (string.IsNullOrEmpty(sample) || !RuleSet.TryCompile(pattern, out var regex, out _))
+        if (string.IsNullOrEmpty(sample) || !RuleSet.TryCompile(pattern, out var regex, out _, enforceLengthLimit: !builtIn))
         {
             return null;
         }

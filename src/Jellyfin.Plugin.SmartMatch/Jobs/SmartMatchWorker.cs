@@ -144,6 +144,37 @@ public sealed class SmartMatchWorker : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Processes every queue entry that is ready now, then completes finished runs. Used by tests
+    /// and by nothing on Jellyfin's scan path.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of entries processed.</returns>
+    internal async Task<int> DrainAsync(CancellationToken cancellationToken)
+    {
+        var processed = 0;
+        for (var guard = 0; guard < 10000; guard++)
+        {
+            var batch = _store.PeekReady(_time.GetUtcNow().UtcDateTime, 20);
+            if (batch.Count == 0)
+            {
+                break;
+            }
+
+            foreach (var entry in batch)
+            {
+                await ProcessAsync(entry, cancellationToken).ConfigureAwait(false);
+                processed++;
+            }
+        }
+
+        _audits.CheckCompletion();
+        return processed;
+    }
+
+    /// <summary>Runs startup recovery (tests).</summary>
+    internal void RecoverForTests() => Recover();
+
     private void Recover()
     {
         // An apply interrupted by a crash: decide from the checkpoint whether anything was written.

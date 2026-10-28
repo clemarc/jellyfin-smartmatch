@@ -87,12 +87,19 @@ public sealed class AuditService
             var run = NewRun(kind, actor, force);
             run.Enqueued = ids.Count;
             _store.SaveAuditRun(run);
-            if (kind == RunKinds.InitialAudit)
-            {
-                _store.UpdateState(s => s.InitialAuditRunId = run.RunId);
-            }
-
             var now = _time.GetUtcNow().UtcDateTime;
+
+            // A full audit covers everything a reconciliation would, so it is the new change baseline.
+            _store.UpdateState(s =>
+            {
+                s.LastReconciliationUtc = now;
+                s.ReconciliationRequired = false;
+                if (kind == RunKinds.InitialAudit)
+                {
+                    s.InitialAuditRunId = run.RunId;
+                }
+            });
+
             foreach (var id in ids)
             {
                 _store.Enqueue(id, FindingOrigin.ExistingAudit, run.RunId, now, force);
