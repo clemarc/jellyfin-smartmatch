@@ -11,6 +11,8 @@ Trace:                      removed site-prefix (site.uindex): www.UIndex.org ·
 Applied (after your click): Tmdb id + title, then a normal Jellyfin metadata refresh
 ```
 
+![Smart Match dashboard in Jellyfin 12](docs/images/overview.png)
+
 ## Features
 
 - **Scan monitoring**: new or changed films and series are picked up from Jellyfin's own scan events, after the scan, without slowing it down. A post-scan reconciliation and a daily scheduled task catch anything missed.

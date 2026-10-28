@@ -10,7 +10,10 @@ const { chromium } = require('playwright');
     const browser = await chromium.launch(launchOptions);
     const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
     const errors = [];
-    page.on('pageerror', (e) => errors.push(String(e)));
+    const foreign = [];
+    // Only errors raised by the Smart Match module fail the check; jellyfin-web's own
+    // navigation noise (e.g. react-query CancelledError) is reported separately.
+    page.on('pageerror', (e) => ((e.stack || '').match(/configurationpage|SmartMatch/i) ? errors : foreign).push(String(e)));
     page.on('console', (m) => { if (m.type() === 'error' && /SmartMatch|configurationpage/i.test(m.text())) errors.push(m.text()); });
     const result = { ok: false, checks: {} };
     try {
@@ -58,6 +61,7 @@ const { chromium } = require('playwright');
         await page.screenshot({ path: outDir + '/smartmatch-mobile.png', fullPage: true });
 
         result.errors = errors;
+        result.webClientWarnings = foreign;
         result.ok = errors.length === 0 && result.checks.tiles === 6 && result.checks.rows > 0 && result.checks.detail && result.checks.settingsLibraries > 0;
     } catch (e) {
         result.errors = errors.concat([String(e)]);

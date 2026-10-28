@@ -1,0 +1,280 @@
+{
+  "meta": {
+    "image": "jellyfin/jellyfin:12.4.20261026-211555",
+    "platform": "native",
+    "zip": "dist/smartmatch_1.0.0.0-jf12.zip",
+    "zipMd5": "c61e01b734f675e25dadadbca5eaeca7",
+    "serverVersion": "12.4.0",
+    "serverProduct": "Jellyfin Server",
+    "pluginVersion": "1.0.0.0",
+    "scanSeconds": 3.0
+  },
+  "passed": 44,
+  "failed": 0,
+  "results": [
+    {
+      "id": "AT-01a",
+      "description": "plugin loaded and Active",
+      "passed": true,
+      "detail": "{\"Name\": \"Smart Match\", \"Version\": \"1.0.0.0\", \"ConfigurationFileName\": \"Jellyfin.Plugin.SmartMatch.xml\", \"Description\": \"Matches films and series with messy filenames. Never renames or moves files.\", \"Id\": \"4b7fecfdbc554216b0322947ec6c22c9\", \"CanUninstall\": true, \"HasImage\": false, \"Status\": \"Active\"}"
+    },
+    {
+      "id": "AT-01b",
+      "description": "configuration page served",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-01c",
+      "description": "UI controller module served as JavaScript",
+      "passed": true,
+      "detail": "application/javascript"
+    },
+    {
+      "id": "M0-tasks",
+      "description": "scheduled tasks registered",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "M0-page",
+      "description": "dashboard page registered",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "M0-compat",
+      "description": "server ABI reported compatible",
+      "passed": true,
+      "detail": "12.4.0.0"
+    },
+    {
+      "id": "AT-21a",
+      "description": "default mode is Report only",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-11a",
+      "description": "anonymous calls rejected with 401 on every endpoint",
+      "passed": true,
+      "detail": "[]"
+    },
+    {
+      "id": "AT-11b",
+      "description": "playback-only user rejected with 403 on every endpoint",
+      "passed": true,
+      "detail": "[]"
+    },
+    {
+      "id": "AT-11c",
+      "description": "no path leaked to non-admin responses",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-17",
+      "description": "scan events produced report entries without a manual audit",
+      "passed": true,
+      "detail": "events=29"
+    },
+    {
+      "id": "AT-02",
+      "description": "UIndex prefix removed and candidate found",
+      "passed": true,
+      "detail": "{\"ReviewId\": \"5279a6da890642f591a32e6739279e1a\", \"Version\": 1, \"ItemId\": \"17d68d69ed61b34c4eb57026fb75a044\", \"OriginalName\": \"www UIndex org - The Fall and Rise of Reggie Dinkins\", \"SearchTitle\": \"The Fall and Rise of Reggie Dinkins\", \"MediaType\": \"Series\", \"LibraryName\": \"TV\", \"Status\": \"Proposed\", \"Reason\": \"Clear best candidate; apply manually (no trusted year in the name).\", \"Origin\": \"NewScan"
+    },
+    {
+      "id": "AT-17b",
+      "description": "finding origin is the new scan",
+      "passed": true,
+      "detail": "NewScan"
+    },
+    {
+      "id": "AT-05",
+      "description": "correctly identified item skipped and unchanged",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-06",
+      "description": "ambiguous The Office needs review, never applied",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-08",
+      "description": "provider outage reported as retriable error without modifying item",
+      "passed": true,
+      "detail": "{\"ReviewId\": \"3f71628e333a40c6863795ee15cd91fc\", \"Version\": 1, \"ItemId\": \"3f85a3022eef5e7749798123a6f47d5d\", \"OriginalName\": \"Provider Down Show\", \"SearchTitle\": \"Provider Down Show\", \"MediaType\": \"Series\", \"LibraryName\": \"TV\", \"Status\": \"ProviderError\", \"Reason\": \"Providers are unavailable; automatic retry after 2026-10-28 13:21:09Z.\", \"Origin\": \"NewScan\", \"AutoEligible\": false, \"Eligible\": false"
+    },
+    {
+      "id": "AT-25",
+      "description": "scan completed despite provider outage",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-13",
+      "description": "movie release name keeps title and year, ignores codec suffix",
+      "passed": true,
+      "detail": "{\"ReviewId\": \"f25507331ae04d07ab90b101a4e62a61\", \"Version\": 1, \"ItemId\": \"e3b1103f6573254bd29f823719189892\", \"OriginalName\": \"The.Dark.Knight.2008.1080p.BluRay.x264\", \"SearchTitle\": \"The Dark Knight\", \"TrustedYear\": 2008, \"MediaType\": \"Movie\", \"LibraryName\": \"Movies\", \"Status\": \"Proposed\", \"Reason\": \"High-confidence unique match.\", \"Origin\": \"NewScan\", \"CandidateName\": \"The Dark Knight\", \"Candidat"
+    },
+    {
+      "id": "AT-03/AT-21",
+      "description": "report-only scan and audit changed no Jellyfin metadata",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-24",
+      "description": "one effective provider lookup per unchanged item despite repeated events",
+      "passed": true,
+      "detail": "searches=1"
+    },
+    {
+      "id": "AT-18",
+      "description": "existing-library audit covers pre-indexed items, unchanged ones not re-searched",
+      "passed": true,
+      "detail": "{\"Unchanged\": 6, \"Processed\": 7, \"Skipped\": 1}"
+    },
+    {
+      "id": "AT-18b",
+      "description": "coverage reports every item checked",
+      "passed": true,
+      "detail": "{\"TotalItems\": 8, \"CheckedItems\": 8, \"InitialAuditCompleted\": true, \"LastAuditCompletedUtc\": \"2026-10-28T13:06:14.6698451Z\", \"LastCheckedUtc\": \"2026-10-28T13:06:14.6695576Z\"}"
+    },
+    {
+      "id": "AT-12a",
+      "description": "NFO-saving library flagged with a warning",
+      "passed": true,
+      "detail": "[\"Library 'Movies': Jellyfin itself may write NFO/artwork files next to the media during a refresh (metadata savers enabled: Nfo). Automatic application is blocked there unless acknowledged.\"]"
+    },
+    {
+      "id": "AT-20a",
+      "description": "preview shows exact scope, count and items",
+      "passed": true,
+      "detail": "all eligible findings in the current filter: type Movie ['Arrival', 'Dune', 'The Dark Knight']"
+    },
+    {
+      "id": "AT-20b",
+      "description": "preview did not mutate",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-20c",
+      "description": "confirmation with a mismatched plan is refused",
+      "passed": true,
+      "detail": "(409, {'Code': 'PLAN_CHANGED', 'Message': 'The plan does not match the preview that was confirmed; preview again.'})"
+    },
+    {
+      "id": "AT-20d",
+      "description": "commit is idempotent",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-20e",
+      "description": "only eligible records changed; per-item outcomes reported",
+      "passed": true,
+      "detail": "{\"The.Dark.Knight.2008.1080p.BluRay.x264\": \"Applied\", \"www.UIndex.org - Arrival.2016.1080p\": \"Conflict\", \"www.UIndex.org - Dune.2021.2160p.HEVC\": \"Applied\"}"
+    },
+    {
+      "id": "AT-07",
+      "description": "conflicting id appearing after preview aborts with conflict",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-04",
+      "description": "applied provider id persisted, metadata refreshed, path unchanged",
+      "passed": true,
+      "detail": "{\"Name\": \"The Dark Knight\", \"Overview\": \"Synthetic overview for The Dark Knight\", \"ProviderIds\": {\"Tmdb\": \"990101\"}}"
+    },
+    {
+      "id": "AT-12b",
+      "description": "identification succeeded although NFO saving was blocked by the read-only media mount",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-04b",
+      "description": "Apply one succeeds",
+      "passed": true,
+      "detail": "{\"Outcome\": \"Applied\", \"Code\": \"APPLIED\", \"Message\": \"Applied Severance.\", \"Finding\": {\"ReviewId\": \"a9872d8cb86544059ce238da9ab3807f\", \"Version\": 4, \"ItemId\": \"de6e4c671be22d8ccc2c15a040089a1d\", \"OriginalName\": \"www.UIndex.org - Severance\", \"SearchTitle\": \"Severance\", \"TrustedYear\": 2022, \"MediaType\": \"Series\", \"LibraryName\": \"TV\", \"Status\": \"Applied\", \"Reason\": \"Applied by manual action.\", \"Origi"
+    },
+    {
+      "id": "M2-stale",
+      "description": "stale ETag rejected",
+      "passed": true,
+      "detail": "(409, {'Outcome': 'Conflict', 'Code': 'STALE_VERSION', 'Message': 'The finding changed since it was displayed; reload and review it again.', 'Finding': {'ReviewId': 'a9872d8cb86544059ce238da9ab3807f', 'Version': 4, 'ItemId': 'de6e4c671be22d8ccc2c15a040089a1d', 'OriginalName': 'www.UIndex.org - Severance', 'SearchTitle': 'Severance', 'TrustedYear': 2022, 'MediaType': 'Series', 'LibraryName': 'TV', "
+    },
+    {
+      "id": "AT-19a",
+      "description": "selected preview applies only valid items and lists exclusions with reasons",
+      "passed": true,
+      "detail": "{\"The Office\": \"Ambiguous or weak match: review and choose a candidate individually.\", \"www.UIndex.org - Arrival.2016.1080p\": \"Conflict: retry analysis first.\"}"
+    },
+    {
+      "id": "AT-19b",
+      "description": "selected valid item applied; ambiguous untouched",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "M2-rollback",
+      "description": "conditional rollback restores provider ids and title",
+      "passed": true,
+      "detail": "{\"outcome\": \"RolledBack\", \"name\": \"www UIndex org - The Fall and Rise of Reggie Dinkins\"}"
+    },
+    {
+      "id": "M3-noloop",
+      "description": "applying and rolling back caused no re-search loop",
+      "passed": true,
+      "detail": "searches=1"
+    },
+    {
+      "id": "M2-validation",
+      "description": "server-side configuration validation",
+      "passed": true,
+      "detail": "400"
+    },
+    {
+      "id": "AT-22a",
+      "description": "high-confidence item in opted-in library auto-applied and refreshed",
+      "passed": true,
+      "detail": "{\"ReviewId\": \"fda504d183d6426ba8e3664e170e9698\", \"Version\": 4, \"ItemId\": \"bb0c9bc31faaa95a3190976234140828\", \"OriginalName\": \"www.UIndex.org - New Auto Show\", \"SearchTitle\": \"New Auto Show\", \"TrustedYear\": 2024, \"MediaType\": \"Series\", \"LibraryName\": \"TV\", \"Status\": \"Applied\", \"Reason\": \"Applied by automatic action.\", \"Origin\": \"NewScan\", \"CandidateName\": \"New Auto Show\", \"CandidateYear\": 2024, \"Ca"
+    },
+    {
+      "id": "AT-22b",
+      "description": "ambiguous titles stay report-only with auto enabled",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-23",
+      "description": "after disabling auto-apply no new automatic commit happens",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "M2-export",
+      "description": "CSV export works and contains no media paths",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "AT-10",
+      "description": "applied outcomes and audit log persist across restart; nothing re-applied",
+      "passed": true,
+      "detail": "decisions 7->7"
+    },
+    {
+      "id": "AT-14",
+      "description": "pre-existing media byte-identical, no files created besides the test's own new downloads",
+      "passed": true,
+      "detail": "[]"
+    }
+  ]
+}
