@@ -5,6 +5,7 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.SmartMatch.Configuration;
+using Jellyfin.Plugin.SmartMatch.Matching;
 using Jellyfin.Plugin.SmartMatch.Model;
 using Jellyfin.Plugin.SmartMatch.Normalization;
 using Jellyfin.Plugin.SmartMatch.Services;
@@ -260,6 +261,146 @@ public class PipelineTests
         Assert.Equal("Skipped:ALREADY_IDENTIFIED", outcome.Code);
         Assert.Equal(0, restarted.Library.Writes);
         h.Dispose();
+    }
+
+    private const string ChicagoFire = "/media/tv/www.UIndex.org - Chicago.Fire.S14E08.1080p.WEB.h264-ETHEL";
+
+    private static (Harness H, Guid Tv) SetupTwoProviders()
+    {
+        var (h, tv, _) = Setup();
+        h.Providers.ProviderNames.Add("The Open Movie Database");
+        h.Providers.Add(MediaKind.Series, "Chicago Fire", 2012, "44006");
+        h.Providers.Catalogue.Add(("Chicago Fire", 2012, MediaKind.Series, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Imdb"] = "tt2261391" }, "The Open Movie Database"));
+        return (h, tv);
+    }
+
+    /// <summary>
+    /// Rewrites the Chicago Fire finding with the two candidates an older ranker produced, then
+    /// restarts on the same journal.
+    /// </summary>
+    private static async Task<Harness> RestartWithOldChicagoFire(Harness h, Guid itemId, bool reportedIds)
+    {
+        var f = h.FindingFor(itemId);
+        h.Store.TryUpdateFinding(f.ReviewId, null, x =>
+        {
+            x.RankerRevision = reportedIds ? 1 : 0;
+            x.Status = FindingStatus.NeedsReview;
+            x.Candidates = new List<CandidateRecord>
+            {
+                new() { CandidateId = "tmdb:44006", Name = "Chicago Fire", Year = 2012, ProviderName = "TheMovieDb", Providers = new() { "TheMovieDb" }, ProviderIds = new() { ["Tmdb"] = "44006" }, ReportedProviderIds = reportedIds ? new() { ["Tmdb"] = "44006" } : null },
+                new() { CandidateId = "imdb:tt2261391", Name = "Chicago Fire", Year = 2012, ProviderName = "The Open Movie Database", Providers = new() { "The Open Movie Database" }, ProviderIds = new() { ["Imdb"] = "tt2261391" }, ReportedProviderIds = reportedIds ? new() { ["Imdb"] = "tt2261391" } : null },
+            };
+            return true;
+        }, out _);
+        await h.Store.FlushAsync(CancellationToken.None);
+
+        var restarted = new Harness(h.Directory);
+        foreach (var (k, v) in h.Library.Items)
+        {
+            restarted.Library.Items[k] = v;
+        }
+
+        restarted.Library.Libraries.AddRange(h.Library.Libraries);
+        restarted.Providers.ProviderNames.Add("The Open Movie Database");
+        restarted.Providers.Catalogue.AddRange(h.Providers.Catalogue);
+        restarted.Worker.RecoverForTests();
+        return restarted;
+    }
+
+    [Fact]
+    public async Task Ranking_update_reranks_open_findings_at_startup_without_searching()
+    {
+        var (h, tv) = SetupTwoProviders();
+        var fire = h.Library.Add(tv, MediaKind.Series, ChicagoFire);
+        var office = h.Library.Add(tv, MediaKind.Series, "/media/tv/The Office");
+        Assert.Equal(FindingStatus.Proposed, (await h.Analyze(fire.Id)).Finding!.Status);
+        var o = (await h.Analyze(office.Id)).Finding!;
+        h.Store.TryUpdateFinding(o.ReviewId, null, x =>
+        {
+            x.RankerRevision = 1;
+            x.Status = FindingStatus.Ignored;
+            return true;
+        }, out _);
+
+        using var restarted = await RestartWithOldChicagoFire(h, fire.Id, reportedIds: true);
+        var reranked = restarted.FindingFor(fire.Id);
+        Assert.Equal(FindingStatus.Proposed, reranked.Status);
+        Assert.Equal(MatchCandidateRanker.Revision, reranked.RankerRevision);
+        Assert.Equal("tmdb:44006", reranked.RecommendedCandidateId);
+        Assert.Single(reranked.Candidates);
+        Assert.Equal(FindingStatus.Ignored, restarted.FindingFor(office.Id).Status);
+        Assert.Empty(restarted.Providers.Queries);
+        Assert.Equal(0, restarted.Library.Writes);
+
+        // Nothing was queued, and the next scan of the unchanged item does not search either.
+        await restarted.Drain();
+        Assert.Equal("Unchanged", (await restarted.Analyze(fire.Id)).Code);
+        Assert.Empty(restarted.Providers.Queries);
+        h.Dispose();
+    }
+
+    [Fact]
+    public async Task Findings_saved_without_reported_ids_are_not_promoted_but_searched_once_more()
+    {
+        var (h, tv) = SetupTwoProviders();
+        var fire = h.Library.Add(tv, MediaKind.Series, ChicagoFire);
+        await h.Analyze(fire.Id);
+
+        using var restarted = await RestartWithOldChicagoFire(h, fire.Id, reportedIds: false);
+        var reranked = restarted.FindingFor(fire.Id);
+        Assert.Equal(FindingStatus.NeedsReview, reranked.Status);
+        Assert.Equal(2, reranked.Candidates.Count);
+        Assert.Empty(restarted.Providers.Queries);
+
+        // The fresh analysis sees every reported id and makes one search per provider.
+        await restarted.Drain();
+        var fresh = restarted.FindingFor(fire.Id);
+        Assert.Equal(FindingStatus.Proposed, fresh.Status);
+        Assert.Single(fresh.Candidates);
+        Assert.NotNull(fresh.Candidates[0].ReportedProviderIds);
+        Assert.Equal(2, restarted.Providers.Queries.Count);
+        Assert.Equal(0, restarted.Library.Writes);
+        h.Dispose();
+    }
+
+    [Fact]
+    public async Task Items_with_the_same_query_share_one_search_for_a_day()
+    {
+        var (h, tv) = SetupTwoProviders();
+        using var _h = h;
+        var e8 = h.Library.Add(tv, MediaKind.Series, ChicagoFire);
+        var e9 = h.Library.Add(tv, MediaKind.Series, "/media/tv/www.UIndex.org - Chicago.Fire.S14E09.1080p.WEB.h264-ETHEL");
+        var e10 = h.Library.Add(tv, MediaKind.Series, "/media/tv/www.UIndex.org - Chicago.Fire.S14E10.1080p.WEB.h264-ETHEL");
+
+        Assert.True((await h.Analyze(e8.Id)).Searched);
+        var second = await h.Analyze(e9.Id);
+        Assert.False(second.Searched);
+        Assert.Equal(FindingStatus.Proposed, second.Finding!.Status);
+        Assert.Equal(2, h.Providers.Queries.Count);
+
+        // Retry analysis and a forced audit always ask the providers again.
+        Assert.True((await h.Analyze(e9.Id, FindingOrigin.Manual, force: true)).Searched);
+        Assert.True((await h.Analyze(e9.Id, FindingOrigin.ExistingAudit, force: true)).Searched);
+        Assert.Equal(6, h.Providers.Queries.Count);
+
+        // After a day the cached search has expired.
+        h.Time.Advance(ProviderResultCache.Lifetime);
+        Assert.True((await h.Analyze(e10.Id)).Searched);
+        Assert.Equal(8, h.Providers.Queries.Count);
+    }
+
+    [Fact]
+    public async Task Searches_with_a_provider_failure_are_not_cached()
+    {
+        var (h, tv) = SetupTwoProviders();
+        using var _h = h;
+        var e8 = h.Library.Add(tv, MediaKind.Series, ChicagoFire);
+        var e9 = h.Library.Add(tv, MediaKind.Series, "/media/tv/www.UIndex.org - Chicago.Fire.S14E09.1080p.WEB.h264-ETHEL");
+        h.Providers.FailProvider["The Open Movie Database"] = () => Harness.Http(HttpStatusCode.ServiceUnavailable);
+
+        await h.Analyze(e8.Id);
+        h.Providers.FailProvider.Clear();
+        Assert.True((await h.Analyze(e9.Id)).Searched);
     }
 
     [Fact]

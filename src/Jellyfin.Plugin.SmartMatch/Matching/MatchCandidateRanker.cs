@@ -66,6 +66,15 @@ public sealed class MatchCandidateRanker
     /// <summary>Maximum candidates stored per finding.</summary>
     public const int MaxCandidates = 10;
 
+    /// <summary>
+    /// Revision of the ranking and policy logic. Bump it whenever a change could classify the same
+    /// provider results differently; stored findings from an older revision are then re-ranked from
+    /// their saved candidates at startup, without new provider searches.
+    /// </summary>
+    public const int Revision = 2;
+
+    private const string StoredCandidateKey = "SmartMatchStoredCandidate";
+
     private readonly ProviderIdValidator _validator;
     private readonly MatchSettings _settings;
 
@@ -89,8 +98,11 @@ public sealed class MatchCandidateRanker
     /// <param name="anyProviderFailed">True when at least one provider failed (blocks automation).</param>
     /// <returns>The classification.</returns>
     public MatchClassification Classify(MediaKind kind, NormalizationResult query, IReadOnlyList<ProviderCandidate> results, bool anyProviderFailed)
+        => Classify(kind, query, results, anyProviderFailed, true);
+
+    private MatchClassification Classify(MediaKind kind, NormalizationResult query, IReadOnlyList<ProviderCandidate> results, bool anyProviderFailed, bool mergeByTitleAndYear)
     {
-        var candidates = Score(kind, query, Deduplicate(kind, results));
+        var candidates = Score(kind, query, Deduplicate(kind, results, mergeByTitleAndYear));
         var autoBlockers = new List<string>();
 
         if (candidates.Count == 0)
@@ -208,6 +220,40 @@ public sealed class MatchCandidateRanker
         return new MatchClassification(FindingStatus.Proposed, candidates, top.CandidateId, reason, Distinct(autoBlockers));
     }
 
+    /// <summary>
+    /// Classifies a finding again from the candidates saved with it, without searching providers.
+    /// Candidates that were one identity stay one identity: each provider's copy carries the stored
+    /// candidate id as a non-writable marker, so the id-based merge regroups them. Candidates saved
+    /// without <see cref="CandidateRecord.ReportedProviderIds"/> lack the non-writable ids that can
+    /// prove two results are different works, so they are never merged by title and year.
+    /// </summary>
+    /// <param name="kind">Media kind.</param>
+    /// <param name="query">Normalization rebuilt from the finding.</param>
+    /// <param name="stored">Candidates saved with the finding.</param>
+    /// <param name="anyProviderFailed">True when a provider failed during the original search.</param>
+    /// <returns>The classification.</returns>
+    public MatchClassification Reclassify(MediaKind kind, NormalizationResult query, IReadOnlyList<CandidateRecord> stored, bool anyProviderFailed)
+    {
+        ArgumentNullException.ThrowIfNull(stored);
+        var results = new List<ProviderCandidate>();
+        foreach (var c in stored)
+        {
+            var ids = new Dictionary<string, string>(c.ReportedProviderIds ?? c.ProviderIds, StringComparer.OrdinalIgnoreCase) { [StoredCandidateKey] = c.CandidateId };
+            var providers = c.Providers.Count > 0 ? c.Providers : new List<string> { c.ProviderName };
+            results.AddRange(providers.Select(p => new ProviderCandidate(c.Name, c.Year, ids, p)));
+        }
+
+        return Classify(kind, query, results, anyProviderFailed, HasFullEvidence(stored));
+    }
+
+    /// <summary>
+    /// Returns true when every saved candidate carries the full set of reported ids.
+    /// </summary>
+    /// <param name="stored">Saved candidates.</param>
+    /// <returns>True when a re-rank sees the same evidence as the original search.</returns>
+    public static bool HasFullEvidence(IReadOnlyList<CandidateRecord> stored)
+        => stored is not null && stored.All(c => c.ReportedProviderIds is not null);
+
     private static List<string> Distinct(List<string> items) => items.Distinct(StringComparer.Ordinal).ToList();
 
     private static string Describe(CandidateRecord c)
@@ -228,9 +274,9 @@ public sealed class MatchCandidateRanker
         return Math.Abs(top.Year.Value - other.Year.Value) <= _settings.YearTolerance;
     }
 
-    private List<(ProviderCandidate First, Dictionary<string, string> Writable, Dictionary<string, string> AllIds, List<string> Providers)> Deduplicate(MediaKind kind, IReadOnlyList<ProviderCandidate> results)
+    private List<MergedResult> Deduplicate(MediaKind kind, IReadOnlyList<ProviderCandidate> results, bool mergeByTitleAndYear)
     {
-        var merged = new List<(ProviderCandidate First, Dictionary<string, string> Writable, Dictionary<string, string> AllIds, List<string> Providers)>();
+        var merged = new List<MergedResult>();
         foreach (var r in results)
         {
             if (string.IsNullOrWhiteSpace(r.Name))
@@ -240,28 +286,19 @@ public sealed class MatchCandidateRanker
 
             var writable = _validator.FilterWritable(kind, r.ProviderIds);
             var allIds = new Dictionary<string, string>(r.ProviderIds ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
-            var existing = merged.FindIndex(m => SharesId(m.AllIds, allIds));
-            if (existing < 0)
+            var existing = merged.Find(m => SharesId(m.AllIds, allIds));
+            if (existing is null)
             {
-                merged.Add((r, writable, allIds, new List<string> { r.ProviderName }));
+                merged.Add(new MergedResult(r, writable, allIds));
                 continue;
             }
 
-            var entry = merged[existing];
-            foreach (var (k, v) in writable)
-            {
-                entry.Writable.TryAdd(k, v);
-            }
+            existing.Absorb(writable, allIds, new[] { r.ProviderName });
+        }
 
-            foreach (var (k, v) in allIds)
-            {
-                entry.AllIds.TryAdd(k, v);
-            }
-
-            if (!entry.Providers.Contains(r.ProviderName, StringComparer.OrdinalIgnoreCase))
-            {
-                entry.Providers.Add(r.ProviderName);
-            }
+        if (mergeByTitleAndYear)
+        {
+            MergeSameWorkAcrossProviders(merged);
         }
 
         return merged;
@@ -280,11 +317,55 @@ public sealed class MatchCandidateRanker
         }
     }
 
-    private List<CandidateRecord> Score(MediaKind kind, NormalizationResult query, List<(ProviderCandidate First, Dictionary<string, string> Writable, Dictionary<string, string> AllIds, List<string> Providers)> merged)
+    /// <summary>
+    /// Providers search different catalogues, so one work often comes back with disjoint ids, e.g. a
+    /// Tmdb id from TheMovieDb and an Imdb id from OMDb. Those results are merged when the title key
+    /// and year are identical, no id key carries two values, and no provider returned two results
+    /// with that title and year (which would mean genuinely different productions).
+    /// </summary>
+    private static void MergeSameWorkAcrossProviders(List<MergedResult> merged)
+    {
+        var groups = merged
+            .Where(m => m.First.Year is not null)
+            .GroupBy(m => (Key: MediaNameNormalizer.ComparisonKey(m.First.Name), Year: m.First.Year!.Value))
+            .Where(g => g.Count() > 1)
+            .Select(g => g.ToList())
+            .ToList();
+
+        foreach (var group in groups)
+        {
+            var providers = group.SelectMany(m => m.Providers).ToList();
+            if (providers.Distinct(StringComparer.OrdinalIgnoreCase).Count() != providers.Count)
+            {
+                continue;
+            }
+
+            var conflict = group
+                .SelectMany(m => m.AllIds.Where(kv => !string.IsNullOrWhiteSpace(kv.Value) && kv.Key != StoredCandidateKey))
+                .GroupBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                .Any(g => g.Select(kv => kv.Value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1);
+            if (conflict)
+            {
+                continue;
+            }
+
+            var target = group[0];
+            foreach (var other in group.Skip(1))
+            {
+                target.Absorb(other.Writable, other.AllIds, other.Providers);
+                merged.Remove(other);
+            }
+
+            target.MergedByTitleAndYear = true;
+        }
+    }
+
+    private List<CandidateRecord> Score(MediaKind kind, NormalizationResult query, List<MergedResult> merged)
     {
         var list = new List<CandidateRecord>();
-        foreach (var (first, writable, _, providers) in merged)
+        foreach (var m in merged)
         {
+            var (first, writable, providers) = (m.First, m.Writable, m.Providers);
             var reasons = new List<string>();
             var candidateKey = MediaNameNormalizer.ComparisonKey(first.Name);
             var similarity = TitleSimilarity.Compute(query.ComparisonKey, candidateKey);
@@ -342,6 +423,11 @@ public sealed class MatchCandidateRanker
                 reasons.Add("+5 returned by " + string.Join(" and ", providers));
             }
 
+            if (m.MergedByTitleAndYear)
+            {
+                reasons.Add("same title and year from each provider; their ids are combined");
+            }
+
             var parse = query.IsSafe && query.Warnings.Count == 0 ? 5 : 0;
             if (parse > 0)
             {
@@ -366,6 +452,7 @@ public sealed class MatchCandidateRanker
                 ProviderName = first.ProviderName,
                 Providers = providers,
                 ProviderIds = writable,
+                ReportedProviderIds = m.AllIds.Where(kv => kv.Key != StoredCandidateKey).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
                 TitleScore = nameScore,
                 RankScore = yearConflict ? Math.Min(nameScore, 40) : nameScore + yearScore + corroboration + parse,
                 Reasons = reasons,
@@ -391,6 +478,48 @@ public sealed class MatchCandidateRanker
             .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .Take(MaxCandidates)
             .ToList();
+    }
+
+    private sealed class MergedResult
+    {
+        public MergedResult(ProviderCandidate first, Dictionary<string, string> writable, Dictionary<string, string> allIds)
+        {
+            First = first;
+            Writable = writable;
+            AllIds = allIds;
+            Providers = new List<string> { first.ProviderName };
+        }
+
+        public ProviderCandidate First { get; }
+
+        public Dictionary<string, string> Writable { get; }
+
+        public Dictionary<string, string> AllIds { get; }
+
+        public List<string> Providers { get; }
+
+        public bool MergedByTitleAndYear { get; set; }
+
+        public void Absorb(IReadOnlyDictionary<string, string> writable, IReadOnlyDictionary<string, string> allIds, IEnumerable<string> providers)
+        {
+            foreach (var (k, v) in writable)
+            {
+                Writable.TryAdd(k, v);
+            }
+
+            foreach (var (k, v) in allIds)
+            {
+                AllIds.TryAdd(k, v);
+            }
+
+            foreach (var p in providers)
+            {
+                if (!Providers.Contains(p, StringComparer.OrdinalIgnoreCase))
+                {
+                    Providers.Add(p);
+                }
+            }
+        }
     }
 }
 

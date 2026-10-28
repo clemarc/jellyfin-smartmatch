@@ -194,6 +194,16 @@ public sealed class SmartMatchWorker : BackgroundService
         }
 
         _bulk.RecoverInterrupted();
+
+        try
+        {
+            // After an update that changes ranking, refresh open findings from saved candidates (no searches).
+            _analyzer.RerankStoredFindings();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Smart Match could not re-rank saved findings; they keep their previous classification");
+        }
     }
 
     private void MaybeStartInitialAudit()

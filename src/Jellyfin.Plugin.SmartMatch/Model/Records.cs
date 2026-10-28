@@ -27,6 +27,13 @@ public sealed class CandidateRecord
     /// <summary>Gets or sets the validated provider identifiers that would be written.</summary>
     public Dictionary<string, string> ProviderIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Gets or sets every identifier the providers reported, including keys Smart Match never writes.
+    /// Kept so a later re-rank sees the same identity evidence as the search; null for findings
+    /// written before 1.0.1.
+    /// </summary>
+    public Dictionary<string, string>? ReportedProviderIds { get; set; }
+
     /// <summary>Gets or sets the rank score out of 100 (not a probability).</summary>
     public int RankScore { get; set; }
 
@@ -119,6 +126,9 @@ public sealed class Finding
 
     /// <summary>Gets or sets reasons the recommended candidate cannot be applied automatically.</summary>
     public List<string> AutoBlockers { get; set; } = new();
+
+    /// <summary>Gets or sets the ranker revision that produced the classification (0 before 1.0.1).</summary>
+    public int RankerRevision { get; set; }
 
     /// <summary>Gets or sets provider failures from the last search.</summary>
     public List<string> ProviderErrors { get; set; } = new();

@@ -283,7 +283,8 @@ public sealed class Harness : IDisposable
         Store = new SmartMatchStore(Files, NullLogger<SmartMatchStore>.Instance);
         Store.Load();
         Executor = new ProviderSearchExecutor(NullLogger<ProviderSearchExecutor>.Instance, Time, (d, ct) => Task.CompletedTask);
-        Analyzer = new ItemAnalyzer(Library, Providers, Executor, new MediaNameNormalizer(() => 2028), Store, Config, Locks, Time, NullLogger<ItemAnalyzer>.Instance);
+        Cache = new ProviderResultCache(Time);
+        Analyzer = new ItemAnalyzer(Library, Providers, Executor, Cache, new MediaNameNormalizer(() => 2028), Store, Config, Locks, Time, NullLogger<ItemAnalyzer>.Instance);
         SelfWrites = new SelfWriteTracker(Time);
         Apply = new MatchApplicationService(Library, Store, Config, Locks, SelfWrites, Server, Time, NullLogger<MatchApplicationService>.Instance);
         Bulk = new BulkApplyCoordinator(Store, Apply, Library, Config, Time, NullLogger<BulkApplyCoordinator>.Instance);
@@ -315,6 +316,8 @@ public sealed class Harness : IDisposable
     public SmartMatchStore Store { get; }
 
     public ProviderSearchExecutor Executor { get; }
+
+    public ProviderResultCache Cache { get; }
 
     public ItemAnalyzer Analyzer { get; }
 
