@@ -98,8 +98,11 @@ public sealed class MatchCandidateRanker
     /// <param name="anyProviderFailed">True when at least one provider failed (blocks automation).</param>
     /// <returns>The classification.</returns>
     public MatchClassification Classify(MediaKind kind, NormalizationResult query, IReadOnlyList<ProviderCandidate> results, bool anyProviderFailed)
+        => Classify(kind, query, results, anyProviderFailed, true);
+
+    private MatchClassification Classify(MediaKind kind, NormalizationResult query, IReadOnlyList<ProviderCandidate> results, bool anyProviderFailed, bool mergeByTitleAndYear)
     {
-        var candidates = Score(kind, query, Deduplicate(kind, results));
+        var candidates = Score(kind, query, Deduplicate(kind, results, mergeByTitleAndYear));
         var autoBlockers = new List<string>();
 
         if (candidates.Count == 0)
@@ -220,7 +223,9 @@ public sealed class MatchCandidateRanker
     /// <summary>
     /// Classifies a finding again from the candidates saved with it, without searching providers.
     /// Candidates that were one identity stay one identity: each provider's copy carries the stored
-    /// candidate id as a non-writable marker, so the id-based merge regroups them.
+    /// candidate id as a non-writable marker, so the id-based merge regroups them. Candidates saved
+    /// without <see cref="CandidateRecord.ReportedProviderIds"/> lack the non-writable ids that can
+    /// prove two results are different works, so they are never merged by title and year.
     /// </summary>
     /// <param name="kind">Media kind.</param>
     /// <param name="query">Normalization rebuilt from the finding.</param>
@@ -233,13 +238,21 @@ public sealed class MatchCandidateRanker
         var results = new List<ProviderCandidate>();
         foreach (var c in stored)
         {
-            var ids = new Dictionary<string, string>(c.ProviderIds, StringComparer.OrdinalIgnoreCase) { [StoredCandidateKey] = c.CandidateId };
+            var ids = new Dictionary<string, string>(c.ReportedProviderIds ?? c.ProviderIds, StringComparer.OrdinalIgnoreCase) { [StoredCandidateKey] = c.CandidateId };
             var providers = c.Providers.Count > 0 ? c.Providers : new List<string> { c.ProviderName };
             results.AddRange(providers.Select(p => new ProviderCandidate(c.Name, c.Year, ids, p)));
         }
 
-        return Classify(kind, query, results, anyProviderFailed);
+        return Classify(kind, query, results, anyProviderFailed, HasFullEvidence(stored));
     }
+
+    /// <summary>
+    /// Returns true when every saved candidate carries the full set of reported ids.
+    /// </summary>
+    /// <param name="stored">Saved candidates.</param>
+    /// <returns>True when a re-rank sees the same evidence as the original search.</returns>
+    public static bool HasFullEvidence(IReadOnlyList<CandidateRecord> stored)
+        => stored is not null && stored.All(c => c.ReportedProviderIds is not null);
 
     private static List<string> Distinct(List<string> items) => items.Distinct(StringComparer.Ordinal).ToList();
 
@@ -261,7 +274,7 @@ public sealed class MatchCandidateRanker
         return Math.Abs(top.Year.Value - other.Year.Value) <= _settings.YearTolerance;
     }
 
-    private List<MergedResult> Deduplicate(MediaKind kind, IReadOnlyList<ProviderCandidate> results)
+    private List<MergedResult> Deduplicate(MediaKind kind, IReadOnlyList<ProviderCandidate> results, bool mergeByTitleAndYear)
     {
         var merged = new List<MergedResult>();
         foreach (var r in results)
@@ -283,7 +296,11 @@ public sealed class MatchCandidateRanker
             existing.Absorb(writable, allIds, new[] { r.ProviderName });
         }
 
-        MergeSameWorkAcrossProviders(merged);
+        if (mergeByTitleAndYear)
+        {
+            MergeSameWorkAcrossProviders(merged);
+        }
+
         return merged;
 
         static bool SharesId(Dictionary<string, string> a, Dictionary<string, string> b)
@@ -435,6 +452,7 @@ public sealed class MatchCandidateRanker
                 ProviderName = first.ProviderName,
                 Providers = providers,
                 ProviderIds = writable,
+                ReportedProviderIds = m.AllIds.Where(kv => kv.Key != StoredCandidateKey).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
                 TitleScore = nameScore,
                 RankScore = yearConflict ? Math.Min(nameScore, 40) : nameScore + yearScore + corroboration + parse,
                 Reasons = reasons,

@@ -37,6 +37,7 @@ public sealed class ItemAnalyzer
     private readonly ILibraryGateway _library;
     private readonly IProviderSearchGateway _providers;
     private readonly ProviderSearchExecutor _executor;
+    private readonly ProviderResultCache _cache;
     private readonly IMediaNameNormalizer _normalizer;
     private readonly SmartMatchStore _store;
     private readonly IConfigProvider _config;
@@ -50,6 +51,7 @@ public sealed class ItemAnalyzer
     /// <param name="library">Library gateway.</param>
     /// <param name="providers">Provider gateway.</param>
     /// <param name="executor">Search executor.</param>
+    /// <param name="cache">Search result cache.</param>
     /// <param name="normalizer">Normalizer.</param>
     /// <param name="store">Store.</param>
     /// <param name="config">Configuration.</param>
@@ -60,6 +62,7 @@ public sealed class ItemAnalyzer
         ILibraryGateway library,
         IProviderSearchGateway providers,
         ProviderSearchExecutor executor,
+        ProviderResultCache cache,
         IMediaNameNormalizer normalizer,
         SmartMatchStore store,
         IConfigProvider config,
@@ -70,6 +73,7 @@ public sealed class ItemAnalyzer
         _library = library;
         _providers = providers;
         _executor = executor;
+        _cache = cache;
         _normalizer = normalizer;
         _store = store;
         _config = config;
@@ -213,11 +217,25 @@ public sealed class ItemAnalyzer
             return Save(item, finding, itemFingerprint, queryFingerprint, "ProviderError", now, false);
         }
 
-        var budget = new SearchBudget(
-            TimeSpan.FromMilliseconds(config.MinSearchIntervalMs),
-            TimeSpan.FromSeconds(config.ProviderTimeoutSeconds),
-            config.ProviderMaxAttempts);
-        var outcome = await _executor.SearchAsync(context, normalization.SearchTitle, normalization.TrustedYear, budget, cancellationToken).ConfigureAwait(false);
+        // Items that clean to the same query within a day share one search; Retry analysis
+        // (a manual request) always asks the providers again.
+        ProviderSearchOutcome outcome;
+        var searched = true;
+        if (entry.Origin != FindingOrigin.Manual && _cache.TryGet(queryFingerprint, out var cached))
+        {
+            outcome = new ProviderSearchOutcome(cached, Array.Empty<ProviderFailure>(), context.Providers.Count);
+            searched = false;
+        }
+        else
+        {
+            var budget = new SearchBudget(
+                TimeSpan.FromMilliseconds(config.MinSearchIntervalMs),
+                TimeSpan.FromSeconds(config.ProviderTimeoutSeconds),
+                config.ProviderMaxAttempts);
+            outcome = await _executor.SearchAsync(context, normalization.SearchTitle, normalization.TrustedYear, budget, cancellationToken).ConfigureAwait(false);
+            _cache.Store(queryFingerprint, outcome);
+        }
+
         finding.ProviderErrors = outcome.Failures.Select(f => $"{f.Provider}: {f.Code} {f.Message}").ToList();
 
         if (outcome.AllFailed)
@@ -247,17 +265,21 @@ public sealed class ItemAnalyzer
         var classification = ranker.Classify(item.Kind, normalization, outcome.Results, outcome.Failures.Count > 0);
         SetResult(finding, classification.Status, classification.Status.ToString().ToUpperInvariant(), classification.Reason, classification.Candidates, classification.RecommendedCandidateId, classification.AutoBlockers);
         _logger.LogInformation(
-            "Smart Match analysed item {ItemId}: {Status} with {Count} candidate(s)",
+            "Smart Match analysed item {ItemId}: {Status} with {Count} candidate(s){Cached}",
             item.Id,
             classification.Status,
-            classification.Candidates.Count);
-        return Save(item, finding, itemFingerprint, queryFingerprint, classification.Status.ToString(), now, true);
+            classification.Candidates.Count,
+            searched ? string.Empty : " (search results from the last day reused)");
+        return Save(item, finding, itemFingerprint, queryFingerprint, classification.Status.ToString(), now, searched);
     }
 
     /// <summary>
     /// Re-ranks open findings classified by an older <see cref="MatchCandidateRanker.Revision"/> from
     /// their saved candidates. No provider is searched, nothing is written to Jellyfin and nothing is
     /// applied automatically; reviewed, applied, ignored and rejected findings are left alone.
+    /// Findings saved before reported ids were kept cannot prove that two same-titled results are one
+    /// work, so they are re-ranked without that merge and, when it could change the outcome, queued
+    /// for one fresh analysis instead.
     /// </summary>
     /// <returns>Number of findings re-ranked.</returns>
     public int RerankStoredFindings()
@@ -297,6 +319,10 @@ public sealed class ItemAnalyzer
             if (result == UpdateResult.Updated)
             {
                 count++;
+                if (!MatchCandidateRanker.HasFullEvidence(f.Candidates) && HasSameTitleAndYear(f.Candidates))
+                {
+                    _store.Enqueue(f.ItemId, f.Origin, null, _time.GetUtcNow().UtcDateTime, true);
+                }
             }
         }
 
@@ -307,6 +333,12 @@ public sealed class ItemAnalyzer
 
         return count;
     }
+
+    private static bool HasSameTitleAndYear(IReadOnlyList<CandidateRecord> candidates)
+        => candidates
+            .Where(c => c.Year is not null)
+            .GroupBy(c => (MediaNameNormalizer.ComparisonKey(c.Name), c.Year))
+            .Any(g => g.Count() > 1);
 
     private static void SetResult(Finding finding, FindingStatus status, string code, string reason, List<CandidateRecord> candidates, string? recommended, List<string> blockers)
     {

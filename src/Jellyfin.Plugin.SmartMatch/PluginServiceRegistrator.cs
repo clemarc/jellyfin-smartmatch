@@ -39,6 +39,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IItemEventSource, JellyfinItemEventSource>();
         serviceCollection.AddSingleton<IMediaNameNormalizer, MediaNameNormalizer>();
         serviceCollection.AddSingleton<ProviderSearchExecutor>();
+        serviceCollection.AddSingleton<ProviderResultCache>();
         serviceCollection.AddSingleton<ItemLockRegistry>();
         serviceCollection.AddSingleton<SelfWriteTracker>();
         serviceCollection.AddSingleton<WorkerStatus>();

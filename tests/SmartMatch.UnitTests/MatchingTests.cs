@@ -110,15 +110,18 @@ public class MatchingTests
         Assert.Equal(FindingStatus.NeedsReview, result.Status);
     }
 
+    private static CandidateRecord Stored(string id, string name, int year, string provider, Dictionary<string, string> writable, Dictionary<string, string>? reported)
+        => new() { CandidateId = id, Name = name, Year = year, ProviderName = provider, Providers = new() { provider }, ProviderIds = writable, ReportedProviderIds = reported };
+
     [Fact]
     public void Reclassify_from_stored_candidates_merges_without_new_results()
     {
         var q = Query("www.UIndex.org - Chicago.Fire.S14E08.1080p.WEB.h264-ETHEL", MediaKind.Series, NameSourceKind.SeriesFolder);
         var stored = new List<CandidateRecord>
         {
-            new() { CandidateId = "tmdb:44006", Name = "Chicago Fire", Year = 2012, ProviderName = "TheMovieDb", Providers = new() { "TheMovieDb" }, ProviderIds = new() { ["Tmdb"] = "44006" } },
-            new() { CandidateId = "imdb:tt2261391", Name = "Chicago Fire", Year = 2012, ProviderName = "The Open Movie Database", Providers = new() { "The Open Movie Database" }, ProviderIds = new() { ["Imdb"] = "tt2261391" } },
-            new() { CandidateId = "tmdb:1", Name = "Chicago Fire FC", Year = 1998, ProviderName = "TheMovieDb", Providers = new() { "TheMovieDb", "The Open Movie Database" }, ProviderIds = new() { ["Tmdb"] = "1", ["Imdb"] = "tt40309254" } },
+            Stored("tmdb:44006", "Chicago Fire", 2012, "TheMovieDb", new() { ["Tmdb"] = "44006" }, new() { ["Tmdb"] = "44006" }),
+            Stored("imdb:tt2261391", "Chicago Fire", 2012, "The Open Movie Database", new() { ["Imdb"] = "tt2261391" }, new() { ["Imdb"] = "tt2261391" }),
+            new() { CandidateId = "tmdb:1", Name = "Chicago Fire FC", Year = 1998, ProviderName = "TheMovieDb", Providers = new() { "TheMovieDb", "The Open Movie Database" }, ProviderIds = new() { ["Tmdb"] = "1", ["Imdb"] = "tt40309254" }, ReportedProviderIds = new() { ["Tmdb"] = "1", ["Imdb"] = "tt40309254" } },
         };
         var result = Ranker.Reclassify(MediaKind.Series, q, stored, false);
         Assert.Equal(FindingStatus.Proposed, result.Status);
@@ -126,7 +129,36 @@ public class MatchingTests
         Assert.Equal("tmdb:44006", result.RecommendedCandidateId);
         Assert.Equal(2, result.Candidates[0].ProviderIds.Count);
         Assert.Equal(2, result.Candidates[1].Providers.Count);
-        Assert.All(result.Candidates, c => Assert.DoesNotContain(c.ProviderIds.Keys, k => k.StartsWith("SmartMatch", StringComparison.Ordinal)));
+        Assert.All(result.Candidates, c => Assert.DoesNotContain(c.ReportedProviderIds!.Keys, k => k.StartsWith("SmartMatch", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Reclassify_keeps_results_apart_when_reported_ids_conflict()
+    {
+        var q = Query("Ghost Hunt (2006)", MediaKind.Series, NameSourceKind.SeriesFolder);
+        var stored = new List<CandidateRecord>
+        {
+            Stored("tmdb:100", "Ghost Hunt", 2006, "TheMovieDb", new() { ["Tmdb"] = "100" }, new() { ["Tmdb"] = "100", ["AniDB"] = "10" }),
+            Stored("imdb:tt1234567", "Ghost Hunt", 2006, "The Open Movie Database", new() { ["Imdb"] = "tt1234567" }, new() { ["Imdb"] = "tt1234567", ["AniDB"] = "20" }),
+        };
+        var result = Ranker.Reclassify(MediaKind.Series, q, stored, false);
+        Assert.Equal(FindingStatus.NeedsReview, result.Status);
+        Assert.Equal(2, result.Candidates.Count);
+    }
+
+    [Fact]
+    public void Reclassify_never_merges_candidates_saved_without_reported_ids()
+    {
+        var q = Query("Ghost Hunt (2006)", MediaKind.Series, NameSourceKind.SeriesFolder);
+        var stored = new List<CandidateRecord>
+        {
+            Stored("tmdb:100", "Ghost Hunt", 2006, "TheMovieDb", new() { ["Tmdb"] = "100" }, null),
+            Stored("imdb:tt1234567", "Ghost Hunt", 2006, "The Open Movie Database", new() { ["Imdb"] = "tt1234567" }, null),
+        };
+        Assert.False(MatchCandidateRanker.HasFullEvidence(stored));
+        var result = Ranker.Reclassify(MediaKind.Series, q, stored, false);
+        Assert.Equal(FindingStatus.NeedsReview, result.Status);
+        Assert.All(result.Candidates, c => Assert.False(c.AutoEligible));
     }
 
     [Fact]

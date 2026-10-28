@@ -10,3 +10,4 @@
 | [0006](0006-library-scope-and-auto-apply.md) | All libraries reported by default; auto-apply is a separate per-library opt-in |
 | [0007](0007-admin-ui-module.md) | Dashboard page as HTML view + ES module controller |
 | [0008](0008-distribution.md) | Reproducible ZIP with meta.json; GitHub Releases + `catalog` branch manifest |
+| [0009](0009-cross-provider-merge-rerank-and-search-cache.md) | Merge one work across providers by title and year; re-rank saved findings offline; one-day search cache |
