@@ -1,6 +1,12 @@
 # Changelog
 
-## 1.0.1.0 (unreleased)
+## 1.0.2.0 (unreleased)
+
+- Bulk runs show which item is being applied and for how long. Each item waits for Jellyfin's metadata and image refresh of that series before the next starts, which can take a minute per item on small hardware; before, the panel only counted finished items, so a slow run looked stuck at "0 of N".
+- The bulk progress panel no longer shows a stray "null" when nothing has failed.
+- The server log records the start of each bulk item ("applying item 3 of 50").
+
+## 1.0.1.0
 
 - The same series or film returned by two providers with different ids (for example a TMDb id from TheMovieDb and an IMDb id from OMDb) is now one candidate carrying both ids, instead of two candidates that block each other as "near-equivalent rivals". Results merge only when the title and year are identical, no id disagrees, and no single provider returned two works with that title and year.
 - After an update that changes ranking, open findings (Proposed and Needs review) are re-ranked at startup from their saved candidates. No provider is searched again, nothing is applied automatically, and applied, ignored and rejected findings are left alone. Candidates now keep every id the providers reported, so a re-rank sees the same evidence as the search. Findings saved by 1.0.0.0 lack those ids and are never promoted by the new merge; those with same-titled candidates get one fresh analysis instead.

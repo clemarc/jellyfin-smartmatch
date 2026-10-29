@@ -1,7 +1,7 @@
 ---
 name: "Smart Match"
 guid: "4b7fecfd-bc55-4216-b032-2947ec6c22c9"
-version: "1.0.1.0"
+version: "1.0.2.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 overview: "Review and repair metadata matches from messy filenames."

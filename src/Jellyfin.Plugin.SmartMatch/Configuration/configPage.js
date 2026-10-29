@@ -509,12 +509,16 @@ export default function (view) {
             run.Items.forEach((i) => { if (i.Outcome) counts[i.Outcome] = (counts[i.Outcome] || 0) + 1; });
             const failures = run.Items.filter((i) => i.Outcome && i.Outcome !== 'Applied').slice(0, 30).map((i) => el('li', { className: 'sm-small', text: i.Title + ': ' + i.Outcome + (i.Message ? ' — ' + i.Message : '') }));
             const running = run.Status === 'Running';
-            box.replaceChildren(
+            const current = running ? run.Items.find((i) => !i.Outcome && i.StartedUtc) : null;
+            const seconds = current ? Math.max(0, Math.round((Date.now() - Date.parse(current.StartedUtc)) / 1000)) : 0;
+            // replaceChildren turns null into the text "null", so absent parts are filtered out.
+            box.replaceChildren(...[
                 el('strong', { text: 'Bulk run ' + run.Status + ': ' + done + ' of ' + run.Items.length }),
-                el('div', { text: Object.entries(counts).map(([k, v]) => k + ' ' + v).join(' · ') }),
+                current ? el('div', { className: 'sm-small', text: 'Applying ' + current.Title + ' (' + seconds + ' s). Jellyfin refreshes each item\'s metadata and images before the next one starts; on small hardware this can take a minute per item.' }) : null,
+                done ? el('div', { text: Object.entries(counts).map(([k, v]) => k + ' ' + v).join(' · ') }) : null,
                 failures.length ? el('ul', null, failures) : null,
                 running ? button('Cancel remaining', async () => { await api('POST', 'ApplyBatch/' + runId + '/Cancel'); poll(); }) : button('Dismiss', () => box.classList.add('sm-hidden'))
-            );
+            ].filter(Boolean));
             if (!running) {
                 clearInterval(state.batchTimer);
                 loadStatus();
