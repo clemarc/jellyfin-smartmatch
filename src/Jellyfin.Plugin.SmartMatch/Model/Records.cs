@@ -363,6 +363,9 @@ public sealed class BatchItem
     /// <summary>Gets or sets the title for display.</summary>
     public string Title { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets when the item started applying (null until it starts).</summary>
+    public DateTime? StartedUtc { get; set; }
+
     /// <summary>Gets or sets the outcome (null while pending).</summary>
     public ApplyOutcome? Outcome { get; set; }
 

@@ -589,12 +589,19 @@ public sealed class BulkApplyCoordinator
         try
         {
             var run = _store.GetBatchRun(runId)!;
+            var position = 0;
             foreach (var item in run.Items)
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
                     break;
                 }
+
+                // Each apply waits for Jellyfin's metadata refresh, which can take a minute per series
+                // on small hardware; recording the start lets the dashboard show the run is alive.
+                position++;
+                _store.UpdateBatchRun(runId, r => r.Items.First(i => i.ReviewId == item.ReviewId).StartedUtc = _time.GetUtcNow().UtcDateTime);
+                _logger.LogInformation("Smart Match batch {RunId}: applying item {Position} of {Total} (finding {ReviewId})", runId, position, run.Items.Count, item.ReviewId);
 
                 ApplyResult result;
                 try

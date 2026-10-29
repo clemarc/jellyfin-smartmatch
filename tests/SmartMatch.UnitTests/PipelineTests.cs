@@ -616,6 +616,7 @@ public class PipelineTests
         var done = h.Store.GetBatchRun(run.RunId)!;
         Assert.Equal(RunStatus.Completed, done.Status);
         Assert.All(done.Items, i => Assert.Equal(ApplyOutcome.Applied, i.Outcome));
+        Assert.All(done.Items, i => Assert.NotNull(i.StartedUtc));
         Assert.Empty(c.ProviderIds);
         Assert.Equal(FindingStatus.NeedsReview, h.FindingFor(c.Id).Status);
         Assert.All(h.Store.GetDecisions(null, 0, 10, out _).Where(d => d.Action == "Apply"), d => Assert.Equal(ApplyOrigin.Bulk, d.Origin));
@@ -723,6 +724,7 @@ public class PipelineTests
         var applied = done.Items.Count(i => i.Outcome == ApplyOutcome.Applied);
         Assert.Equal(2, applied);
         Assert.All(done.Items.Where(i => i.Outcome != ApplyOutcome.Applied), i => Assert.Equal(ApplyOutcome.Cancelled, i.Outcome));
+        Assert.All(done.Items.Where(i => i.Outcome == ApplyOutcome.Cancelled), i => Assert.Null(i.StartedUtc));
 
         // Pending items remain eligible in the report and a fresh preview retries exactly them.
         var retry = h.Bulk.Preview(new BatchPreviewRequest { Scope = "AllEligible" }, "admin");
